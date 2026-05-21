@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -19,7 +19,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -27,9 +26,36 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import StatusCell from "@/components/leads/StatusCell";
+import OwnerCell from "@/components/leads/OwnerCell";
 import { labelFor } from "@/lib/apollo-mapping";
 import { getLeadValue } from "@/lib/leads-columns";
-import type { Lead, LeadStatus, Profile } from "@/lib/types";
+import {
+  CALL_STATUS_BADGE,
+  CALL_STATUS_OPTIONS,
+  EMAIL_STATUS_BADGE,
+  EMAIL_STATUS_OPTIONS,
+  LEAD_STATUS_BADGE,
+  LEAD_STATUS_OPTIONS,
+  LINKEDIN_STAGE_BADGE,
+  LINKEDIN_STAGE_OPTIONS,
+  relativeTime,
+} from "@/lib/leads/labels";
+import {
+  updateCallStatus,
+  updateEmailStatus,
+  updateLeadOwner,
+  updateLeadStatus,
+  updateLinkedInStage,
+} from "@/lib/leads/actions";
+import type {
+  CallStatus,
+  EmailStatus,
+  Lead,
+  LeadStatus,
+  LinkedInStage,
+  Profile,
+} from "@/lib/types";
 
 interface Props {
   leads: Lead[];
@@ -37,33 +63,34 @@ interface Props {
   profiles: Profile[];
 }
 
-const LEAD_STATUS_LABEL: Record<LeadStatus, string> = {
-  new: "New",
-  active: "Active",
-  unqualified: "Unqualified",
-  won: "Won",
-  dead: "Dead",
-};
-
-const LEAD_STATUS_VARIANT: Record<LeadStatus, "default" | "secondary" | "outline" | "destructive"> =
-  {
-    new: "secondary",
-    active: "default",
-    unqualified: "outline",
-    won: "default",
-    dead: "destructive",
-  };
-
-export default function LeadsTable({ leads, visibleColumns, profiles }: Props) {
+export default function LeadsTable({
+  leads: initialLeads,
+  visibleColumns,
+  profiles,
+}: Props) {
+  const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
   const [sorting, setSorting] = useState<SortingState>([]);
 
-  const profileById = useMemo(() => {
-    const m = new Map<string, Profile>();
-    for (const p of profiles) m.set(p.id, p);
-    return m;
-  }, [profiles]);
+  // Optimistic helper: patch a lead in local state, run server action, revert on error.
+  const optimisticPatch = useCallback(
+    async (leadId: string, patch: Partial<Lead>, action: () => Promise<void>) => {
+      const previous = leads;
+      setLeads((curr) =>
+        curr.map((l) => (l.id === leadId ? { ...l, ...patch } : l))
+      );
+      try {
+        await action();
+      } catch (err) {
+        setLeads(previous);
+        // eslint-disable-next-line no-console
+        console.error("Failed to update lead:", err);
+        alert(err instanceof Error ? err.message : "Update failed.");
+      }
+    },
+    [leads]
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -113,18 +140,112 @@ export default function LeadsTable({ leads, visibleColumns, profiles }: Props) {
       },
     }));
 
-    // Tail columns: owner + status (always visible, Step 4 makes them interactive)
+    // ─── Interactive pipeline columns ──────────────────────────────────────
     cols.push({
       id: "owner",
       header: "Owner",
-      accessorFn: (row) =>
-        row.owner_id ? profileById.get(row.owner_id)?.display_name ?? "Unknown" : "Unassigned",
       cell: (info) => {
-        const v = info.getValue() as string;
-        return v === "Unassigned" ? (
-          <span className="text-muted-foreground">Unassigned</span>
-        ) : (
-          v
+        const lead = info.row.original;
+        return (
+          <OwnerCell
+            ownerId={lead.owner_id}
+            profiles={profiles}
+            onChange={(next) =>
+              optimisticPatch(lead.id, { owner_id: next }, () =>
+                updateLeadOwner(lead.id, next)
+              )
+            }
+          />
+        );
+      },
+    });
+
+    cols.push({
+      id: "email_status",
+      header: "Email",
+      cell: (info) => {
+        const lead = info.row.original;
+        return (
+          <StatusCell<EmailStatus>
+            value={lead.email_status}
+            options={EMAIL_STATUS_OPTIONS}
+            variantFor={EMAIL_STATUS_BADGE}
+            suffix={
+              lead.email_status !== "none"
+                ? relativeTime(lead.email_status_updated_at)
+                : undefined
+            }
+            onChange={(next) =>
+              optimisticPatch(
+                lead.id,
+                {
+                  email_status: next,
+                  email_status_updated_at: new Date().toISOString(),
+                },
+                () => updateEmailStatus(lead.id, next)
+              )
+            }
+          />
+        );
+      },
+    });
+
+    cols.push({
+      id: "linkedin_stage",
+      header: "LinkedIn",
+      cell: (info) => {
+        const lead = info.row.original;
+        return (
+          <StatusCell<LinkedInStage>
+            value={lead.linkedin_stage}
+            options={LINKEDIN_STAGE_OPTIONS}
+            variantFor={LINKEDIN_STAGE_BADGE}
+            suffix={
+              lead.linkedin_stage !== "none"
+                ? relativeTime(lead.linkedin_stage_updated_at)
+                : undefined
+            }
+            onChange={(next) =>
+              optimisticPatch(
+                lead.id,
+                {
+                  linkedin_stage: next,
+                  linkedin_stage_updated_at: new Date().toISOString(),
+                },
+                () => updateLinkedInStage(lead.id, next)
+              )
+            }
+          />
+        );
+      },
+    });
+
+    cols.push({
+      id: "call_status",
+      header: "Call",
+      cell: (info) => {
+        const lead = info.row.original;
+        return (
+          <StatusCell<CallStatus>
+            value={lead.call_status}
+            options={CALL_STATUS_OPTIONS}
+            variantFor={CALL_STATUS_BADGE}
+            suffix={
+              lead.call_status !== "not_called"
+                ? relativeTime(lead.call_status_updated_at)
+                : undefined
+            }
+            onChange={(next) =>
+              optimisticPatch(
+                lead.id,
+                {
+                  call_status: next,
+                  call_status_updated_at: new Date().toISOString(),
+                },
+                () => updateCallStatus(lead.id, next)
+              )
+            }
+          />
         );
       },
     });
@@ -132,15 +253,30 @@ export default function LeadsTable({ leads, visibleColumns, profiles }: Props) {
     cols.push({
       id: "lead_status",
       header: "Status",
-      accessorFn: (row) => row.lead_status,
       cell: (info) => {
-        const v = info.getValue() as LeadStatus;
-        return <Badge variant={LEAD_STATUS_VARIANT[v]}>{LEAD_STATUS_LABEL[v]}</Badge>;
+        const lead = info.row.original;
+        return (
+          <StatusCell<LeadStatus>
+            value={lead.lead_status}
+            options={LEAD_STATUS_OPTIONS}
+            variantFor={LEAD_STATUS_BADGE}
+            onChange={(next) =>
+              optimisticPatch(
+                lead.id,
+                {
+                  lead_status: next,
+                  lead_status_updated_at: new Date().toISOString(),
+                },
+                () => updateLeadStatus(lead.id, next)
+              )
+            }
+          />
+        );
       },
     });
 
     return cols;
-  }, [visibleColumns, profileById]);
+  }, [visibleColumns, profiles, optimisticPatch]);
 
   const table = useReactTable({
     data: filtered,
@@ -170,11 +306,11 @@ export default function LeadsTable({ leads, visibleColumns, profiles }: Props) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Status: all</SelectItem>
-            <SelectItem value="new">New</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="unqualified">Unqualified</SelectItem>
-            <SelectItem value="won">Won</SelectItem>
-            <SelectItem value="dead">Dead</SelectItem>
+            {LEAD_STATUS_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <p className="ml-auto text-sm text-muted-foreground">
