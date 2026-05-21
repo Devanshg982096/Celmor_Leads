@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import NaradaLogo from "@/components/brand/NaradaLogo";
+import ThemeToggle from "@/components/theme/ThemeToggle";
 import { login } from "@/lib/auth/actions";
 
 export default function LoginForm() {
@@ -22,11 +23,30 @@ export default function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="space-y-1 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">Celmor Leads</h1>
-          <p className="text-sm text-muted-foreground">Sign in to your account</p>
+    <div
+      className="min-h-screen flex flex-col items-center justify-center px-4"
+      style={{ backgroundColor: "var(--bg-base)" }}
+    >
+      {/* Theme toggle in the top-right so you can sanity-check both modes */}
+      <div className="absolute right-6 top-6">
+        <ThemeToggle />
+      </div>
+
+      <div
+        className="w-full max-w-[400px] rounded-xl border p-8"
+        style={{
+          backgroundColor: "var(--bg-elevated)",
+          borderColor: "var(--border-subtle)",
+        }}
+      >
+        <div className="flex flex-col items-center text-center mb-8">
+          <NaradaLogo size="lg" />
+          <p
+            className="text-xs mt-4"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Lead intelligence for Celmor
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -37,7 +57,7 @@ export default function LoginForm() {
               name="email"
               type="email"
               autoComplete="email"
-              placeholder="you@example.com"
+              placeholder="you@celmor.co.uk"
               required
               disabled={isPending}
             />
@@ -56,20 +76,26 @@ export default function LoginForm() {
           </div>
 
           {error && (
-            <p className="text-sm text-destructive">{error}</p>
+            <p
+              className="text-sm"
+              style={{ color: "var(--status-danger)" }}
+            >
+              {error}
+            </p>
           )}
 
-          <Button type="submit" className="w-full" disabled={isPending}>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={isPending}
+            style={{
+              backgroundColor: "var(--accent-primary)",
+              color: "#FFFFFF",
+            }}
+          >
             {isPending ? "Signing in…" : "Sign in"}
           </Button>
         </form>
-
-        <p className="text-center text-sm text-muted-foreground">
-          No account?{" "}
-          <Link href="/signup" className="underline underline-offset-4 hover:text-primary">
-            Sign up
-          </Link>
-        </p>
       </div>
     </div>
   );
