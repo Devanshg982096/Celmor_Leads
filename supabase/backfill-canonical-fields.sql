@@ -5,17 +5,19 @@
 -- ─── LinkedIn URL ────────────────────────────────────────────────────────
 update leads
 set linkedin_url = coalesce(
-  nullif(raw_data->>'linkedin_link', ''),
-  nullif(raw_data->>'linkedin_url',  ''),
-  nullif(raw_data->>'linkedin_profile', ''),
-  nullif(raw_data->>'person_linkedin_url', '')
+  nullif(raw_data->>'linkedin_link',         ''),
+  nullif(raw_data->>'linkedin_url',          ''),
+  nullif(raw_data->>'linkedin_profile',      ''),
+  nullif(raw_data->>'person_linkedin_url',   ''),
+  nullif(raw_data->>'person_linkedin_link',  '')
 )
 where (linkedin_url is null or linkedin_url = '')
   and coalesce(
-    nullif(raw_data->>'linkedin_link', ''),
-    nullif(raw_data->>'linkedin_url',  ''),
-    nullif(raw_data->>'linkedin_profile', ''),
-    nullif(raw_data->>'person_linkedin_url', '')
+    nullif(raw_data->>'linkedin_link',        ''),
+    nullif(raw_data->>'linkedin_url',         ''),
+    nullif(raw_data->>'linkedin_profile',     ''),
+    nullif(raw_data->>'person_linkedin_url',  ''),
+    nullif(raw_data->>'person_linkedin_link', '')
   ) is not null;
 
 -- ─── Company ─────────────────────────────────────────────────────────────
@@ -30,20 +32,27 @@ where (company is null or company = '')
     nullif(raw_data->>'company',      '')
   ) is not null;
 
--- ─── Phone (try work direct first, then mobile) ──────────────────────────
+-- ─── Phone — fall back through person fields, then Company Phone Number ──
+-- Order matches the new NewAvatarFlow resolution:
+--   phone → work_direct_phone → direct_phone → mobile_phone → mobile
+--   → company_phone (last resort for UK accountancy outreach use case)
 update leads
 set phone = coalesce(
-  nullif(raw_data->>'phone',              ''),
-  nullif(raw_data->>'work_direct_phone',  ''),
-  nullif(raw_data->>'direct_phone',       ''),
-  nullif(raw_data->>'mobile_phone',       ''),
-  nullif(raw_data->>'mobile',             '')
+  nullif(raw_data->>'phone',                ''),
+  nullif(raw_data->>'work_direct_phone',    ''),
+  nullif(raw_data->>'direct_phone',         ''),
+  nullif(raw_data->>'mobile_phone',         ''),
+  nullif(raw_data->>'mobile',               ''),
+  nullif(raw_data->>'company_phone',        ''),
+  nullif(raw_data->>'company_phone_number', '')
 )
 where (phone is null or phone = '')
   and coalesce(
-    nullif(raw_data->>'phone',              ''),
-    nullif(raw_data->>'work_direct_phone',  ''),
-    nullif(raw_data->>'direct_phone',       ''),
-    nullif(raw_data->>'mobile_phone',       ''),
-    nullif(raw_data->>'mobile',             '')
+    nullif(raw_data->>'phone',                ''),
+    nullif(raw_data->>'work_direct_phone',    ''),
+    nullif(raw_data->>'direct_phone',         ''),
+    nullif(raw_data->>'mobile_phone',         ''),
+    nullif(raw_data->>'mobile',               ''),
+    nullif(raw_data->>'company_phone',        ''),
+    nullif(raw_data->>'company_phone_number', '')
   ) is not null;

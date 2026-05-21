@@ -148,7 +148,11 @@ export default function NewAvatarFlow() {
         company: r.company?.trim() || null,
         title: r.title?.trim() || null,
         linkedin_url: r.linkedin_url?.trim() || null,
-        phone: r.phone?.trim() || r.mobile_phone?.trim() || null,
+        phone:
+          r.phone?.trim() ||
+          r.mobile_phone?.trim() ||
+          r.company_phone?.trim() ||
+          null,
         raw_data: r,
       }));
 
