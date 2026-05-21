@@ -176,7 +176,8 @@ export default function LeadsTable({
       ),
     });
 
-    visibleColumns.forEach((key) => cols.push({
+    // Helper: build a normal data column for a given key.
+    const buildDataColumn = (key: string): ColumnDef<Lead> => ({
       id: key,
       header: labelFor(key),
       accessorFn: (row: Lead) => getLeadValue(row, key),
@@ -208,9 +209,24 @@ export default function LeadsTable({
         }
         return value || <span className="text-muted-foreground">—</span>;
       },
-    }));
+    });
 
-    // ─── Interactive pipeline columns ──────────────────────────────────────
+    // ─── 1. Fixed leading columns: Name, Company, Employees, City ────────
+    // Always shown if at least one lead has data for the column.
+    const FIXED_LEADING = ["name", "company", "employees", "city"] as const;
+    const hasAnyData = (key: string) =>
+      leads.some((l) => (getLeadValue(l, key) ?? "").trim() !== "");
+
+    const renderedKeys = new Set<string>();
+    for (const key of FIXED_LEADING) {
+      // Always show name; for the rest, hide the column if no row has data for it.
+      if (key === "name" || hasAnyData(key)) {
+        cols.push(buildDataColumn(key));
+        renderedKeys.add(key);
+      }
+    }
+
+    // ─── 2. Interactive pipeline columns (Owner before Email) ─────────────
     cols.push({
       id: "owner",
       header: "Owner",
@@ -345,8 +361,16 @@ export default function LeadsTable({
       },
     });
 
+    // ─── 3. Other user-selected columns (everything not already shown) ───
+    for (const key of visibleColumns) {
+      if (renderedKeys.has(key)) continue;
+      cols.push(buildDataColumn(key));
+      renderedKeys.add(key);
+    }
+
     return cols;
   }, [
+    leads,
     visibleColumns,
     profiles,
     optimisticPatch,
