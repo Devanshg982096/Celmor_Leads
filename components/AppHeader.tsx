@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { logout } from "@/lib/auth/actions";
 import { Button } from "@/components/ui/button";
+import NaradaLogo from "@/components/brand/NaradaLogo";
 
 export default async function AppHeader() {
   const supabase = await createClient();
@@ -22,8 +23,8 @@ export default async function AppHeader() {
   return (
     <header className="border-b bg-background">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-        <Link href="/" className="text-base font-semibold tracking-tight">
-          Celmor Leads
+        <Link href="/" aria-label="Narada home" className="inline-flex">
+          <NaradaLogo size="sm" />
         </Link>
         <div className="flex items-center gap-3 text-sm">
           {displayName && (
