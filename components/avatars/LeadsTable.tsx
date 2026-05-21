@@ -30,6 +30,7 @@ import {
 import StatusCell from "@/components/leads/StatusCell";
 import OwnerCell from "@/components/leads/OwnerCell";
 import BulkActionBar from "@/components/leads/BulkActionBar";
+import LeadDetailDrawer from "@/components/leads/LeadDetailDrawer";
 import { labelFor } from "@/lib/apollo-mapping";
 import { getLeadValue } from "@/lib/leads-columns";
 import {
@@ -78,6 +79,7 @@ export default function LeadsTable({
   const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [openLeadId, setOpenLeadId] = useState<string | null>(null);
 
   // Optimistic helper: patch a lead in local state, run server action, revert on error.
   const optimisticPatch = useCallback(
@@ -476,7 +478,11 @@ export default function LeadsTable({
               </TableRow>
             ) : (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer hover:bg-accent/40"
+                  onClick={() => setOpenLeadId(row.original.id)}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="whitespace-nowrap">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -488,6 +494,16 @@ export default function LeadsTable({
           </TableBody>
         </Table>
       </div>
+
+      <LeadDetailDrawer
+        leadId={openLeadId}
+        onClose={() => setOpenLeadId(null)}
+        onNotesSaved={(id, newNotes) =>
+          setLeads((curr) =>
+            curr.map((l) => (l.id === id ? { ...l, notes: newNotes } : l))
+          )
+        }
+      />
     </div>
   );
 }
