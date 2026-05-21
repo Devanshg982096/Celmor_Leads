@@ -78,11 +78,15 @@ export default function QualifiedCell({
         </Badge>
       </PopoverTrigger>
 
-      <PopoverContent
-        align="start"
-        className="w-80"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <PopoverContent align="start" className="w-80">
+        {/* base-ui's Popup may override onClick on the portal root, so wrap the
+            popover's actual content in a div we own and stop both click + mousedown
+            from bubbling to the parent row's onClick (which opens the drawer). */}
+        <div
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          className="flex flex-col gap-2.5"
+        >
         {isQualified ? (
           <>
             <p className="text-sm font-medium">Unqualify this lead</p>
@@ -159,6 +163,7 @@ export default function QualifiedCell({
             </div>
           </>
         )}
+        </div>
       </PopoverContent>
     </Popover>
   );
