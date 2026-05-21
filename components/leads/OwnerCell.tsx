@@ -37,7 +37,7 @@ export default function OwnerCell({ ownerId, profiles, onChange }: Props) {
         {profiles.map((p) => (
           <DropdownMenuItem
             key={p.id}
-            onSelect={() => {
+            onClick={() => {
               if (p.id === ownerId) return;
               startTransition(async () => {
                 await onChange(p.id);
@@ -51,7 +51,7 @@ export default function OwnerCell({ ownerId, profiles, onChange }: Props) {
         ))}
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          onSelect={() => {
+          onClick={() => {
             if (ownerId === null) return;
             startTransition(async () => {
               await onChange(null);

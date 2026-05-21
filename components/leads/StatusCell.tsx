@@ -54,7 +54,7 @@ export default function StatusCell<T extends string>({
         {options.map((opt) => (
           <DropdownMenuItem
             key={opt.value}
-            onSelect={() => {
+            onClick={() => {
               if (opt.value === value) return;
               startTransition(async () => {
                 await onChange(opt.value);
