@@ -16,6 +16,13 @@ import LeadDetailDrawer from "@/components/leads/LeadDetailDrawer";
 import KpiBar, { percent, type Kpi } from "@/components/channels/KpiBar";
 import LinkedInFunnel from "@/components/channels/LinkedInFunnel";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   LINKEDIN_STAGE_BADGE,
   LINKEDIN_STAGE_OPTIONS,
   relativeTime,
@@ -89,6 +96,7 @@ const REPLIED_STAGES = new Set<LinkedInStage>([
 export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
+  const [stageFilter, setStageFilter] = useState<LinkedInStage | "all">("all");
 
   const optimisticPatch = useCallback(
     async (leadId: string, patch: Partial<Lead>, run: () => Promise<void>) => {
@@ -117,10 +125,15 @@ export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
     return copy;
   }, [leads]);
 
-  // Hide unqualified after optimistic toggle.
+  // Hide unqualified (post-optimistic toggle) AND apply stage filter.
   const visible = useMemo(
-    () => sorted.filter((l) => l.qualified === "qualified"),
-    [sorted],
+    () =>
+      sorted.filter((l) => {
+        if (l.qualified !== "qualified") return false;
+        if (stageFilter !== "all" && l.linkedin_stage !== stageFilter) return false;
+        return true;
+      }),
+    [sorted, stageFilter],
   );
 
   const counts = useMemo(() => {
@@ -181,6 +194,28 @@ export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
         ]}
       />
 
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <Select
+          value={stageFilter}
+          onValueChange={(v) => setStageFilter((v ?? "all") as LinkedInStage | "all")}
+        >
+          <SelectTrigger className="w-56">
+            <SelectValue placeholder="Stage: all" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Stage: all</SelectItem>
+            {LINKEDIN_STAGE_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="ml-auto text-sm text-muted-foreground">
+          {visible.length.toLocaleString()} of {leads.filter((l) => l.qualified === "qualified").length.toLocaleString()} leads
+        </p>
+      </div>
+
       <div className="rounded-md border overflow-x-auto">
         <Table>
           <TableHeader>
@@ -189,6 +224,7 @@ export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
               <TableHead>Last Name</TableHead>
               <TableHead>Company</TableHead>
               <TableHead>Employees</TableHead>
+              <TableHead>Website</TableHead>
               <TableHead>LinkedIn</TableHead>
               <TableHead>Stage</TableHead>
               <TableHead>Days since</TableHead>
@@ -199,7 +235,7 @@ export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
                   No qualified leads with a LinkedIn URL.
                 </TableCell>
               </TableRow>
@@ -207,6 +243,9 @@ export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
               visible.map((lead) => {
                 const { first, last } = splitName(lead.name);
                 const employees = getLeadValue(lead, "employees");
+                const website =
+                  getLeadValue(lead, "website") ||
+                  getLeadValue(lead, "company_website_short");
                 return (
                   <TableRow
                     key={lead.id}
@@ -218,6 +257,21 @@ export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
                     <TableCell className="whitespace-nowrap">{lead.company ?? "—"}</TableCell>
                     <TableCell className="whitespace-nowrap">
                       {employees || <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {website ? (
+                        <a
+                          href={website.startsWith("http") ? website : `https://${website}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary underline-offset-2 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Site ↗
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
                       {lead.linkedin_url ? (
