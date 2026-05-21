@@ -19,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import StatusCell from "@/components/leads/StatusCell";
 import OwnerCell from "@/components/leads/OwnerCell";
+import BulkActionBar from "@/components/leads/BulkActionBar";
 import { labelFor } from "@/lib/apollo-mapping";
 import { getLeadValue } from "@/lib/leads-columns";
 import {
@@ -42,6 +44,9 @@ import {
   relativeTime,
 } from "@/lib/leads/labels";
 import {
+  bulkUpdateEmailStatus,
+  bulkUpdateLeadOwner,
+  bulkUpdateLeadStatus,
   updateCallStatus,
   updateEmailStatus,
   updateLeadOwner,
@@ -72,6 +77,7 @@ export default function LeadsTable({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // Optimistic helper: patch a lead in local state, run server action, revert on error.
   const optimisticPatch = useCallback(
@@ -105,8 +111,55 @@ export default function LeadsTable({
     });
   }, [leads, search, statusFilter]);
 
+  const filteredIds = useMemo(() => filtered.map((l) => l.id), [filtered]);
+  const allFilteredSelected =
+    filteredIds.length > 0 && filteredIds.every((id) => selected.has(id));
+  const someFilteredSelected = filteredIds.some((id) => selected.has(id));
+
+  function toggleAllFiltered(check: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (check) filteredIds.forEach((id) => next.add(id));
+      else filteredIds.forEach((id) => next.delete(id));
+      return next;
+    });
+  }
+
+  function toggleRow(id: string, check: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (check) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
   const columns = useMemo<ColumnDef<Lead>[]>(() => {
-    const cols: ColumnDef<Lead>[] = visibleColumns.map((key) => ({
+    const cols: ColumnDef<Lead>[] = [];
+
+    // ─── Selection checkbox column ────────────────────────────────────────
+    cols.push({
+      id: "_select",
+      enableSorting: false,
+      header: () => (
+        <Checkbox
+          checked={allFilteredSelected}
+          indeterminate={someFilteredSelected && !allFilteredSelected}
+          onCheckedChange={(v) => toggleAllFiltered(v === true)}
+          aria-label="Select all filtered leads"
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          checked={selected.has(row.original.id)}
+          onCheckedChange={(v) => toggleRow(row.original.id, v === true)}
+          aria-label="Select row"
+          onClick={(e) => e.stopPropagation()}
+        />
+      ),
+    });
+
+    visibleColumns.forEach((key) => cols.push({
       id: key,
       header: labelFor(key),
       accessorFn: (row: Lead) => getLeadValue(row, key),
@@ -276,7 +329,15 @@ export default function LeadsTable({
     });
 
     return cols;
-  }, [visibleColumns, profiles, optimisticPatch]);
+  }, [
+    visibleColumns,
+    profiles,
+    optimisticPatch,
+    selected,
+    allFilteredSelected,
+    someFilteredSelected,
+    filteredIds,
+  ]);
 
   const table = useReactTable({
     data: filtered,
@@ -288,8 +349,70 @@ export default function LeadsTable({
     getFilteredRowModel: getFilteredRowModel(),
   });
 
+  // Bulk action handlers — optimistically patch each selected lead, then run server action.
+  async function bulkAssignOwner(ownerId: string | null) {
+    const ids = Array.from(selected);
+    const previous = leads;
+    setLeads((curr) =>
+      curr.map((l) => (selected.has(l.id) ? { ...l, owner_id: ownerId } : l))
+    );
+    try {
+      await bulkUpdateLeadOwner(ids, ownerId);
+    } catch (err) {
+      setLeads(previous);
+      alert(err instanceof Error ? err.message : "Bulk update failed.");
+    }
+  }
+
+  async function bulkMarkSmartleadSent() {
+    const ids = Array.from(selected);
+    const previous = leads;
+    const now = new Date().toISOString();
+    setLeads((curr) =>
+      curr.map((l) =>
+        selected.has(l.id)
+          ? { ...l, email_status: "smartlead_sent", email_status_updated_at: now }
+          : l
+      )
+    );
+    try {
+      await bulkUpdateEmailStatus(ids, "smartlead_sent");
+    } catch (err) {
+      setLeads(previous);
+      alert(err instanceof Error ? err.message : "Bulk update failed.");
+    }
+  }
+
+  async function bulkSetLeadStatus(status: LeadStatus) {
+    const ids = Array.from(selected);
+    const previous = leads;
+    const now = new Date().toISOString();
+    setLeads((curr) =>
+      curr.map((l) =>
+        selected.has(l.id)
+          ? { ...l, lead_status: status, lead_status_updated_at: now }
+          : l
+      )
+    );
+    try {
+      await bulkUpdateLeadStatus(ids, status);
+    } catch (err) {
+      setLeads(previous);
+      alert(err instanceof Error ? err.message : "Bulk update failed.");
+    }
+  }
+
   return (
     <div className="space-y-4">
+      <BulkActionBar
+        selectedCount={selected.size}
+        profiles={profiles}
+        onClear={() => setSelected(new Set())}
+        onAssignOwner={bulkAssignOwner}
+        onMarkSmartleadSent={bulkMarkSmartleadSent}
+        onSetLeadStatus={bulkSetLeadStatus}
+      />
+
       <div className="flex flex-wrap items-center gap-3">
         <Input
           placeholder="Search name, email or company…"
