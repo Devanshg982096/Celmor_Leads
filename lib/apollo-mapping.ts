@@ -1,17 +1,20 @@
 /**
  * Apollo CSV column -> friendly key mapping.
  *
- * The keys on the left are the EXACT header strings Apollo exports.
- * The values on the right are normalised keys we use internally and show in UI.
+ * The lookup is case-insensitive (e.g. "Linkedin Link" and "linkedin link"
+ * both work). The values on the right are the normalised keys we store
+ * and show in UI.
  *
- * Anything not in this map is passed through as-is (and stored in raw_data).
- * The four required canonical columns are: name, email, company, linkedin_url.
+ * Anything not in this map is slug-cased and passed through as-is
+ * (and stored in raw_data). The four required canonical columns are:
+ * name, email, company, linkedin_url.
  */
-export const APOLLO_FIELD_MAP: Record<string, string> = {
+const APOLLO_FIELD_MAP_RAW: Record<string, string> = {
   // Identity
   "First Name": "first_name",
   "Last Name": "last_name",
   "Full Name": "name",
+  "Person Name": "name",
 
   // Contact
   Email: "email",
@@ -20,7 +23,10 @@ export const APOLLO_FIELD_MAP: Record<string, string> = {
   "Secondary Email": "secondary_email",
   "Personal Email": "personal_email",
   "Work Direct Phone": "phone",
+  "Direct Phone": "phone",
   "Mobile Phone": "mobile_phone",
+  Mobile: "mobile_phone",
+  Phone: "phone",
   "Corporate Phone": "corporate_phone",
   "Home Phone": "home_phone",
   "Other Phone": "other_phone",
@@ -32,9 +38,11 @@ export const APOLLO_FIELD_MAP: Record<string, string> = {
 
   // Company
   Company: "company",
+  "Company Name": "company",
   "Company Name for Emails": "company",
   Industry: "industry",
   "# Employees": "employees",
+  Employees: "employees",
   "Annual Revenue": "annual_revenue",
   "Total Funding": "total_funding",
   "Latest Funding": "latest_funding",
@@ -42,17 +50,29 @@ export const APOLLO_FIELD_MAP: Record<string, string> = {
   "Last Raised At": "last_raised_at",
   Keywords: "keywords",
 
-  // Links
+  // Links — Apollo has historically used several names for the LinkedIn URL
   "Person Linkedin Url": "linkedin_url",
-  "Website": "website",
+  "Person LinkedIn URL": "linkedin_url",
+  "Person Linkedin URL": "linkedin_url",
+  "LinkedIn URL": "linkedin_url",
+  "Linkedin URL": "linkedin_url",
+  "Linkedin Url": "linkedin_url",
+  "Linkedin Link": "linkedin_url",
+  "LinkedIn Link": "linkedin_url",
+  "LinkedIn Profile": "linkedin_url",
+  Website: "website",
   "Company Linkedin Url": "company_linkedin_url",
+  "Company LinkedIn URL": "company_linkedin_url",
   "Facebook Url": "facebook_url",
   "Twitter Url": "twitter_url",
 
-  // Location
+  // Location — Apollo prefixes person location with "Lead "
   City: "city",
+  "Lead City": "city",
   State: "state",
+  "Lead State": "state",
   Country: "country",
+  "Lead Country": "country",
   "Company City": "company_city",
   "Company State": "company_state",
   "Company Country": "company_country",
@@ -60,12 +80,24 @@ export const APOLLO_FIELD_MAP: Record<string, string> = {
   "Company Phone": "company_phone",
 
   // Apollo metadata
-  "Lists": "apollo_lists",
-  "Stage": "apollo_stage",
+  Lists: "apollo_lists",
+  Stage: "apollo_stage",
   "Lead Source": "apollo_lead_source",
   "Last Contacted": "apollo_last_contacted",
   "Account Owner": "apollo_account_owner",
 };
+
+/**
+ * Lower-cased lookup version (built once at module load).
+ */
+const APOLLO_FIELD_MAP_CI: Record<string, string> = Object.fromEntries(
+  Object.entries(APOLLO_FIELD_MAP_RAW).map(([k, v]) => [k.toLowerCase(), v]),
+);
+
+/**
+ * Original (case-sensitive) export kept for reference / future tooling.
+ */
+export const APOLLO_FIELD_MAP = APOLLO_FIELD_MAP_RAW;
 
 /**
  * Columns the user can never hide — always shown in the table.
@@ -105,16 +137,14 @@ export const COLUMN_LABELS: Record<string, string> = {
 };
 
 /**
- * Convert an Apollo header (or any header) to our normalised key.
+ * Convert a CSV header to our normalised key. Lookup is case-insensitive.
  * Unknown headers are slug-cased so they remain usable.
  */
 export function normaliseHeader(header: string): string {
-  if (APOLLO_FIELD_MAP[header]) return APOLLO_FIELD_MAP[header];
-  return header
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+  const lower = header.trim().toLowerCase();
+  const mapped = APOLLO_FIELD_MAP_CI[lower];
+  if (mapped) return mapped;
+  return lower.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
 /**
@@ -136,7 +166,9 @@ export function normaliseRow(raw: Record<string, string>): Record<string, string
   const out: Record<string, string> = {};
   for (const [header, value] of Object.entries(raw)) {
     const key = normaliseHeader(header);
-    if (!(key in out) || out[key] === "") out[key] = value ?? "";
+    const v = (value ?? "").trim();
+    // First non-empty value wins; later columns don't clobber a populated key.
+    if (!(key in out) || out[key] === "") out[key] = v;
   }
   if (!out.name && (out.first_name || out.last_name)) {
     out.name = `${out.first_name ?? ""} ${out.last_name ?? ""}`.trim();
