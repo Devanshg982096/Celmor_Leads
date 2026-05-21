@@ -15,6 +15,13 @@ import QualifiedCell from "@/components/leads/QualifiedCell";
 import LeadDetailDrawer from "@/components/leads/LeadDetailDrawer";
 import KpiBar, { percent, type Kpi } from "@/components/channels/KpiBar";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   CALL_STATUS_BADGE,
   CALL_STATUS_OPTIONS,
 } from "@/lib/leads/labels";
@@ -47,6 +54,7 @@ function splitName(name: string): { first: string; last: string } {
 export default function CallsView({ leads: initialLeads, profiles }: Props) {
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<CallStatus | "all">("all");
 
   // Optimistic local patch helper.
   const optimisticPatch = useCallback(
@@ -77,21 +85,30 @@ export default function CallsView({ leads: initialLeads, profiles }: Props) {
     return copy;
   }, [leads]);
 
-  // After we hide unqualified leads from this view, remove them from local list
-  // so the next render reflects "they disappear from this view".
+  // Hide unqualified (post-optimistic toggle) AND apply call-status filter.
   const visible = useMemo(
+    () =>
+      sorted.filter((l) => {
+        if (l.qualified !== "qualified") return false;
+        if (statusFilter !== "all" && l.call_status !== statusFilter) return false;
+        return true;
+      }),
+    [sorted, statusFilter],
+  );
+
+  // KPIs are over the full qualified population — the status filter only narrows
+  // the table, not the analytics.
+  const qualifiedLeads = useMemo(
     () => sorted.filter((l) => l.qualified === "qualified"),
     [sorted],
   );
-
-  // KPIs computed from the current visible dataset.
   const kpis = useMemo<Kpi[]>(() => {
-    const total = visible.length;
+    const total = qualifiedLeads.length;
     let dialed = 0,
       reached = 0,
       voicemail = 0,
       pending = 0;
-    for (const l of visible) {
+    for (const l of qualifiedLeads) {
       if (l.call_status !== "not_called") dialed++;
       else pending++;
       if (l.call_status === "reached") reached++;
@@ -104,11 +121,33 @@ export default function CallsView({ leads: initialLeads, profiles }: Props) {
       { label: "Voicemail rate", value: percent(voicemail, dialed), hint: `${voicemail.toLocaleString()} voicemails` },
       { label: "Pending", value: pending.toLocaleString(), hint: "not called yet" },
     ];
-  }, [visible]);
+  }, [qualifiedLeads]);
 
   return (
     <>
       <KpiBar kpis={kpis} />
+
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <Select
+          value={statusFilter}
+          onValueChange={(v) => setStatusFilter((v ?? "all") as CallStatus | "all")}
+        >
+          <SelectTrigger className="w-56">
+            <SelectValue placeholder="Status: all" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Status: all</SelectItem>
+            {CALL_STATUS_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="ml-auto text-sm text-muted-foreground">
+          {visible.length.toLocaleString()} of {qualifiedLeads.length.toLocaleString()} leads
+        </p>
+      </div>
 
       <div className="rounded-md border overflow-x-auto">
         <Table>
