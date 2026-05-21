@@ -22,6 +22,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import StatusCell from "@/components/leads/StatusCell";
 import OwnerCell from "@/components/leads/OwnerCell";
+import QualifiedCell from "@/components/leads/QualifiedCell";
 import BulkActionBar from "@/components/leads/BulkActionBar";
 import LeadDetailDrawer from "@/components/leads/LeadDetailDrawer";
 import FilterBar, { filtersFromSearchParams } from "@/components/leads/FilterBar";
@@ -43,6 +44,8 @@ import {
   bulkUpdateEmailStatus,
   bulkUpdateLeadOwner,
   bulkUpdateLeadStatus,
+  requalifyLead,
+  unqualifyLead,
   updateCallStatus,
   updateEmailStatus,
   updateLeadOwner,
@@ -56,6 +59,7 @@ import type {
   LeadStatus,
   LinkedInStage,
   Profile,
+  UnqualifiedReason,
 } from "@/lib/types";
 
 interface Props {
@@ -103,6 +107,8 @@ export default function LeadsTable({
   const filtered = useMemo(() => {
     const q = filters.q.trim().toLowerCase();
     return leads.filter((lead) => {
+      // Qualified filter (hide unqualified by default)
+      if (!filters.show_unqualified && lead.qualified === "unqualified") return false;
       // Owner filter
       if (filters.owner !== ALL) {
         if (filters.owner === "me") {
@@ -354,6 +360,45 @@ export default function LeadsTable({
                   lead_status_updated_at: new Date().toISOString(),
                 },
                 () => updateLeadStatus(lead.id, next)
+              )
+            }
+          />
+        );
+      },
+    });
+
+    // Qualified column (after Status, before any other visible columns).
+    cols.push({
+      id: "qualified",
+      header: "Qualified",
+      cell: (info) => {
+        const lead = info.row.original;
+        return (
+          <QualifiedCell
+            qualified={lead.qualified}
+            reason={lead.unqualified_reason}
+            unqualifiedAt={lead.unqualified_at}
+            onUnqualify={(reason: UnqualifiedReason) =>
+              optimisticPatch(
+                lead.id,
+                {
+                  qualified: "unqualified",
+                  unqualified_reason: reason,
+                  unqualified_at: new Date().toISOString(),
+                },
+                () => unqualifyLead(lead.id, reason),
+              )
+            }
+            onRequalify={() =>
+              optimisticPatch(
+                lead.id,
+                {
+                  qualified: "qualified",
+                  unqualified_reason: null,
+                  unqualified_at: null,
+                  unqualified_by: null,
+                },
+                () => requalifyLead(lead.id),
               )
             }
           />

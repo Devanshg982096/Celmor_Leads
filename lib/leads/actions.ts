@@ -7,7 +7,9 @@ import type {
   EmailStatus,
   LeadStatus,
   LinkedInStage,
+  UnqualifiedReason,
 } from "@/lib/types";
+import { labelForReason } from "@/lib/leads/labels";
 
 async function logActivity(
   leadId: string,
@@ -181,5 +183,42 @@ export async function bulkUpdateLeadStatus(leadIds: string[], status: LeadStatus
   if (error) throw new Error(error.message);
 
   await logBulkActivity(supabase, leadIds, userId, `Bulk lead status → ${status}`);
+  revalidatePath("/", "layout");
+}
+
+// ─── Qualified flag ─────────────────────────────────────────────────────────
+
+export async function unqualifyLead(leadId: string, reason: UnqualifiedReason) {
+  const { supabase, userId } = await getActorOrThrow();
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("leads")
+    .update({
+      qualified: "unqualified",
+      unqualified_reason: reason,
+      unqualified_at: now,
+      unqualified_by: userId,
+    })
+    .eq("id", leadId);
+  if (error) throw new Error(error.message);
+
+  await logActivity(leadId, userId, `Unqualified · ${labelForReason(reason)}`);
+  revalidatePath("/", "layout");
+}
+
+export async function requalifyLead(leadId: string) {
+  const { supabase, userId } = await getActorOrThrow();
+  const { error } = await supabase
+    .from("leads")
+    .update({
+      qualified: "qualified",
+      unqualified_reason: null,
+      unqualified_at: null,
+      unqualified_by: null,
+    })
+    .eq("id", leadId);
+  if (error) throw new Error(error.message);
+
+  await logActivity(leadId, userId, "Re-qualified");
   revalidatePath("/", "layout");
 }

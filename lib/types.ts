@@ -10,6 +10,13 @@ export type LinkedInStage =
   | "dead";
 export type CallStatus = "not_called" | "called" | "voicemail" | "reached";
 export type LeadStatus = "new" | "active" | "unqualified" | "won" | "dead";
+export type QualifiedStatus = "qualified" | "unqualified";
+export type UnqualifiedReason =
+  | "wrong_fit"
+  | "no_budget"
+  | "not_decision_maker"
+  | "cant_reach"
+  | "other";
 
 // ─── Row shapes (canonical) ───────────────────────────────────────────────
 export interface ProfileRow {
@@ -49,6 +56,10 @@ export interface LeadRow {
   call_status_updated_at: string | null;
   lead_status_updated_at: string | null;
   notes: string | null;
+  qualified: QualifiedStatus;
+  unqualified_reason: UnqualifiedReason | null;
+  unqualified_at: string | null;
+  unqualified_by: string | null;
   created_at: string;
 }
 

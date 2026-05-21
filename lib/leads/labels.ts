@@ -3,7 +3,20 @@ import type {
   EmailStatus,
   LeadStatus,
   LinkedInStage,
+  UnqualifiedReason,
 } from "@/lib/types";
+
+export const UNQUALIFIED_REASON_OPTIONS: { value: UnqualifiedReason; label: string }[] = [
+  { value: "wrong_fit", label: "Wrong fit" },
+  { value: "no_budget", label: "No budget" },
+  { value: "not_decision_maker", label: "Not the decision-maker" },
+  { value: "cant_reach", label: "Can't reach" },
+  { value: "other", label: "Other" },
+];
+
+export function labelForReason(reason: UnqualifiedReason): string {
+  return UNQUALIFIED_REASON_OPTIONS.find((r) => r.value === reason)?.label ?? reason;
+}
 
 export const EMAIL_STATUS_OPTIONS: { value: EmailStatus; label: string }[] = [
   { value: "none", label: "Not sent" },

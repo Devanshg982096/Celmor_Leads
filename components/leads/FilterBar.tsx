@@ -34,6 +34,7 @@ export interface FilterState {
   email_status: EmailStatus | "all";
   linkedin_stage: LinkedInStage | "all";
   call_status: CallStatus | "all";
+  show_unqualified: boolean;
 }
 
 export function emptyFilterState(): FilterState {
@@ -44,6 +45,7 @@ export function emptyFilterState(): FilterState {
     email_status: ALL,
     linkedin_stage: ALL,
     call_status: ALL,
+    show_unqualified: false,
   };
 }
 
@@ -60,6 +62,7 @@ export function filtersFromSearchParams(
     email_status: (params.get("email") ?? ALL) as FilterState["email_status"],
     linkedin_stage: (params.get("linkedin") ?? ALL) as FilterState["linkedin_stage"],
     call_status: (params.get("call") ?? ALL) as FilterState["call_status"],
+    show_unqualified: params.get("show_unqualified") === "1",
   };
 }
 
@@ -144,6 +147,7 @@ export default function FilterBar({
       email_status: "email",
       linkedin_stage: "linkedin",
       call_status: "call",
+      show_unqualified: "show_unqualified",
     } as const;
     setParam(map[key], null);
   }
@@ -153,6 +157,7 @@ export default function FilterBar({
   }
 
   const myLeadsActive = state.owner === "me";
+  const showUnqualifiedActive = state.show_unqualified;
 
   return (
     <div className="space-y-3">
@@ -176,6 +181,19 @@ export default function FilterBar({
           }
         >
           My leads only
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setParam("show_unqualified", showUnqualifiedActive ? null : "1")}
+          className={
+            "rounded-md border px-3 py-1.5 text-sm transition-colors " +
+            (showUnqualifiedActive
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-background hover:bg-accent")
+          }
+        >
+          Show unqualified
         </button>
 
         <FilterSelect
