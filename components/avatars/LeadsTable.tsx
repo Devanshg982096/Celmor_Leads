@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   useReactTable,
   getCoreRowModel,
@@ -18,19 +19,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import StatusCell from "@/components/leads/StatusCell";
 import OwnerCell from "@/components/leads/OwnerCell";
 import BulkActionBar from "@/components/leads/BulkActionBar";
 import LeadDetailDrawer from "@/components/leads/LeadDetailDrawer";
+import FilterBar, { filtersFromSearchParams } from "@/components/leads/FilterBar";
 import { labelFor } from "@/lib/apollo-mapping";
 import { getLeadValue } from "@/lib/leads-columns";
 import {
@@ -44,6 +38,7 @@ import {
   LINKEDIN_STAGE_OPTIONS,
   relativeTime,
 } from "@/lib/leads/labels";
+import { ALL } from "@/components/leads/FilterBar";
 import {
   bulkUpdateEmailStatus,
   bulkUpdateLeadOwner,
@@ -67,16 +62,21 @@ interface Props {
   leads: Lead[];
   visibleColumns: string[];
   profiles: Profile[];
+  currentUserId: string;
 }
 
 export default function LeadsTable({
   leads: initialLeads,
   visibleColumns,
   profiles,
+  currentUserId,
 }: Props) {
+  const searchParams = useSearchParams();
+  const filters = useMemo(
+    () => filtersFromSearchParams(new URLSearchParams(searchParams.toString())),
+    [searchParams],
+  );
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
@@ -101,9 +101,24 @@ export default function LeadsTable({
   );
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = filters.q.trim().toLowerCase();
     return leads.filter((lead) => {
-      if (statusFilter !== "all" && lead.lead_status !== statusFilter) return false;
+      // Owner filter
+      if (filters.owner !== ALL) {
+        if (filters.owner === "me") {
+          if (lead.owner_id !== currentUserId) return false;
+        } else if (filters.owner === "unassigned") {
+          if (lead.owner_id !== null) return false;
+        } else {
+          if (lead.owner_id !== filters.owner) return false;
+        }
+      }
+      // Status filters
+      if (filters.lead_status !== ALL && lead.lead_status !== filters.lead_status) return false;
+      if (filters.email_status !== ALL && lead.email_status !== filters.email_status) return false;
+      if (filters.linkedin_stage !== ALL && lead.linkedin_stage !== filters.linkedin_stage) return false;
+      if (filters.call_status !== ALL && lead.call_status !== filters.call_status) return false;
+      // Search
       if (!q) return true;
       return (
         lead.name.toLowerCase().includes(q) ||
@@ -111,7 +126,7 @@ export default function LeadsTable({
         (lead.company ?? "").toLowerCase().includes(q)
       );
     });
-  }, [leads, search, statusFilter]);
+  }, [leads, filters, currentUserId]);
 
   const filteredIds = useMemo(() => filtered.map((l) => l.id), [filtered]);
   const allFilteredSelected =
@@ -415,33 +430,12 @@ export default function LeadsTable({
         onSetLeadStatus={bulkSetLeadStatus}
       />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Input
-          placeholder="Search name, email or company…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="max-w-xs"
-        />
-        <Select
-          value={statusFilter}
-          onValueChange={(v) => setStatusFilter(v as LeadStatus | "all")}
-        >
-          <SelectTrigger className="w-44">
-            <SelectValue placeholder="Status: all" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Status: all</SelectItem>
-            {LEAD_STATUS_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="ml-auto text-sm text-muted-foreground">
-          {filtered.length.toLocaleString()} of {leads.length.toLocaleString()} leads
-        </p>
-      </div>
+      <FilterBar
+        profiles={profiles}
+        currentUserId={currentUserId}
+        resultCount={filtered.length}
+        totalCount={leads.length}
+      />
 
       <div className="rounded-md border overflow-x-auto">
         <Table>

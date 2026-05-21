@@ -26,10 +26,12 @@ export default async function AvatarDetailPage({
   if (!avatarRow) notFound();
   const avatar = avatarRow as Avatar;
 
-  const [leads, profiles] = await Promise.all([
+  const [leads, profiles, { data: userData }] = await Promise.all([
     listLeadsForAvatar(id),
     listProfiles(),
+    supabase.auth.getUser(),
   ]);
+  const currentUserId = userData.user?.id ?? "";
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -57,6 +59,7 @@ export default async function AvatarDetailPage({
           leads={leads}
           visibleColumns={avatar.visible_columns}
           profiles={profiles}
+          currentUserId={currentUserId}
         />
       </main>
     </div>
