@@ -11,76 +11,114 @@ export type LinkedInStage =
 export type CallStatus = "not_called" | "called" | "voicemail" | "reached";
 export type LeadStatus = "new" | "active" | "unqualified" | "won" | "dead";
 
+// ─── Row shapes (canonical) ───────────────────────────────────────────────
+export interface ProfileRow {
+  id: string;
+  display_name: string;
+  email: string;
+  created_at: string;
+}
+
+export interface AvatarRow {
+  id: string;
+  name: string;
+  created_at: string;
+  created_by: string;
+  source: string;
+  visible_columns: string[];
+  total_leads: number;
+}
+
+export interface LeadRow {
+  id: string;
+  avatar_id: string;
+  owner_id: string | null;
+  name: string;
+  email: string;
+  company: string | null;
+  title: string | null;
+  linkedin_url: string | null;
+  phone: string | null;
+  raw_data: Record<string, unknown>;
+  email_status: EmailStatus;
+  linkedin_stage: LinkedInStage;
+  call_status: CallStatus;
+  lead_status: LeadStatus;
+  linkedin_stage_updated_at: string | null;
+  email_status_updated_at: string | null;
+  call_status_updated_at: string | null;
+  lead_status_updated_at: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface ActivityLogRow {
+  id: string;
+  lead_id: string;
+  user_id: string;
+  action: string;
+  created_at: string;
+}
+
+// ─── Supabase Database shape ──────────────────────────────────────────────
+type Insertable<T, Optional extends keyof T> = Omit<T, Optional> & Partial<Pick<T, Optional>>;
+
 export interface Database {
   public: {
     Tables: {
+      profiles: {
+        Row: ProfileRow;
+        Insert: Insertable<ProfileRow, "created_at">;
+        Update: Partial<ProfileRow>;
+        Relationships: [];
+      };
       avatars: {
-        Row: {
-          id: string;
-          name: string;
-          created_at: string;
-          created_by: string;
-          source: string;
-          visible_columns: string[];
-          total_leads: number;
-        };
-        Insert: Omit<Database["public"]["Tables"]["avatars"]["Row"], "id" | "created_at" | "total_leads"> & {
-          id?: string;
-          created_at?: string;
-          total_leads?: number;
-        };
-        Update: Partial<Database["public"]["Tables"]["avatars"]["Insert"]>;
+        Row: AvatarRow;
+        Insert: Insertable<AvatarRow, "id" | "created_at" | "total_leads">;
+        Update: Partial<AvatarRow>;
+        Relationships: [];
       };
       leads: {
-        Row: {
-          id: string;
-          avatar_id: string;
-          owner_id: string | null;
-          name: string;
-          email: string;
-          company: string | null;
-          title: string | null;
-          linkedin_url: string | null;
-          phone: string | null;
-          raw_data: Record<string, unknown>;
-          email_status: EmailStatus;
-          linkedin_stage: LinkedInStage;
-          call_status: CallStatus;
-          lead_status: LeadStatus;
-          linkedin_stage_updated_at: string | null;
-          email_status_updated_at: string | null;
-          call_status_updated_at: string | null;
-          lead_status_updated_at: string | null;
-          notes: string | null;
-          created_at: string;
-        };
-        Insert: Omit<Database["public"]["Tables"]["leads"]["Row"], "id" | "created_at"> & {
-          id?: string;
-          created_at?: string;
-        };
-        Update: Partial<Database["public"]["Tables"]["leads"]["Insert"]>;
+        Row: LeadRow;
+        Insert: Insertable<LeadRow, "id" | "created_at">;
+        Update: Partial<LeadRow>;
+        Relationships: [
+          {
+            foreignKeyName: "leads_avatar_id_fkey";
+            columns: ["avatar_id"];
+            referencedRelation: "avatars";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       activity_log: {
-        Row: {
-          id: string;
-          lead_id: string;
-          user_id: string;
-          action: string;
-          created_at: string;
-        };
-        Insert: Omit<Database["public"]["Tables"]["activity_log"]["Row"], "id" | "created_at"> & {
-          id?: string;
-          created_at?: string;
-        };
-        Update: Partial<Database["public"]["Tables"]["activity_log"]["Insert"]>;
+        Row: ActivityLogRow;
+        Insert: Insertable<ActivityLogRow, "id" | "created_at">;
+        Update: Partial<ActivityLogRow>;
+        Relationships: [];
       };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
-    Enums: Record<string, never>;
+    Enums: {
+      email_status: EmailStatus;
+      linkedin_stage: LinkedInStage;
+      call_status: CallStatus;
+      lead_status: LeadStatus;
+    };
+    CompositeTypes: Record<string, never>;
   };
 }
 
-export type Avatar = Database["public"]["Tables"]["avatars"]["Row"];
-export type Lead = Database["public"]["Tables"]["leads"]["Row"];
-export type ActivityLog = Database["public"]["Tables"]["activity_log"]["Row"];
+// Public aliases
+export type Profile = ProfileRow;
+export type Avatar = AvatarRow;
+export type Lead = LeadRow;
+export type ActivityLog = ActivityLogRow;
+
+export interface AvatarWithStats extends AvatarRow {
+  owner_split: { display_name: string; count: number }[];
+  contacted: number;
+  replied: number;
+  won: number;
+}
