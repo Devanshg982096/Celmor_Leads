@@ -169,5 +169,5 @@ export async function createAvatarAndRedirect(input: {
 }): Promise<void> {
   const id = await createAvatar(input);
   revalidatePath("/");
-  redirect(`/avatars/${id}`);
+  redirect(`/avatars/${id}/master`);
 }
