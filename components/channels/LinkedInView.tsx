@@ -15,13 +15,7 @@ import QualifiedCell from "@/components/leads/QualifiedCell";
 import LeadDetailDrawer from "@/components/leads/LeadDetailDrawer";
 import KpiBar, { percent, type Kpi } from "@/components/channels/KpiBar";
 import LinkedInFunnel from "@/components/channels/LinkedInFunnel";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import ChipRow from "@/components/channels/ChipRow";
 import {
   LINKEDIN_STAGE_BADGE,
   LINKEDIN_STAGE_OPTIONS,
@@ -126,14 +120,16 @@ export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
   }, [leads]);
 
   // Hide unqualified (post-optimistic toggle) AND apply stage filter.
+  const qualifiedLeads = useMemo(
+    () => sorted.filter((l) => l.qualified === "qualified"),
+    [sorted],
+  );
   const visible = useMemo(
     () =>
-      sorted.filter((l) => {
-        if (l.qualified !== "qualified") return false;
-        if (stageFilter !== "all" && l.linkedin_stage !== stageFilter) return false;
-        return true;
-      }),
-    [sorted, stageFilter],
+      qualifiedLeads.filter(
+        (l) => stageFilter === "all" || l.linkedin_stage === stageFilter,
+      ),
+    [qualifiedLeads, stageFilter],
   );
 
   const counts = useMemo(() => {
@@ -195,24 +191,23 @@ export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
       />
 
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <Select
+        <ChipRow<LinkedInStage | "all">
           value={stageFilter}
-          onValueChange={(v) => setStageFilter((v ?? "all") as LinkedInStage | "all")}
+          onChange={setStageFilter}
+          options={[
+            { value: "all", label: "All stages", count: qualifiedLeads.length },
+            ...LINKEDIN_STAGE_OPTIONS.map((o) => ({
+              value: o.value,
+              label: o.label,
+              count: qualifiedLeads.filter((l) => l.linkedin_stage === o.value).length,
+            })),
+          ]}
+        />
+        <p
+          className="ml-auto text-[12px] font-mono text-[var(--text-tertiary)]"
+          style={{ fontVariantNumeric: "tabular-nums" }}
         >
-          <SelectTrigger className="w-56">
-            <SelectValue placeholder="Stage: all" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Stage: all</SelectItem>
-            {LINKEDIN_STAGE_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="ml-auto text-sm text-muted-foreground">
-          {visible.length.toLocaleString()} of {leads.filter((l) => l.qualified === "qualified").length.toLocaleString()} leads
+          {visible.length.toLocaleString("en-GB")} of {qualifiedLeads.length.toLocaleString("en-GB")} leads
         </p>
       </div>
 

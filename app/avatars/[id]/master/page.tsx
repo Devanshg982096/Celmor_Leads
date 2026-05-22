@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import LeadsTable from "@/components/avatars/LeadsTable";
+import ChannelTabs from "@/components/avatars/ChannelTabs";
 import { createClient } from "@/lib/supabase/server";
 import { listLeadsForAvatar, listProfiles } from "@/lib/avatars/leads-actions";
 import type { Avatar } from "@/lib/types";
@@ -40,13 +41,20 @@ export default async function MasterSheetPage({
         { label: "Master Sheet" },
       ]}
     >
-      <div className="mb-6">
-        <h1 className="text-[28px] font-semibold tracking-tight text-[var(--text-primary)]">
-          {avatar.name}
-        </h1>
-        <p className="text-sm text-[var(--text-secondary)] mt-1">
-          {leads.length.toLocaleString()} leads · {avatar.visible_columns.length} visible columns
-        </p>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.07em] text-[var(--accent-soft)]">
+            {avatar.name}
+          </p>
+          <h1 className="font-display text-[30px] leading-tight tracking-[-0.015em] text-[var(--text-primary)]">
+            Master sheet
+          </h1>
+          <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
+            {leads.length.toLocaleString("en-GB")} leads ·{" "}
+            {avatar.visible_columns.length} visible columns
+          </p>
+        </div>
+        <ChannelTabs avatarId={id} />
       </div>
 
       <LeadsTable

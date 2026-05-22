@@ -10,13 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import ChipRow from "@/components/channels/ChipRow";
 import StatusCell from "@/components/leads/StatusCell";
 import OwnerCell from "@/components/leads/OwnerCell";
 import QualifiedCell from "@/components/leads/QualifiedCell";
@@ -225,24 +219,23 @@ export default function EmailsView({ leads: initialLeads, profiles }: Props) {
       <KpiBar kpis={kpis} />
 
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <Select
+        <ChipRow<EmailStatus | "all">
           value={statusFilter}
-          onValueChange={(v) => setStatusFilter((v ?? "all") as EmailStatus | "all")}
+          onChange={setStatusFilter}
+          options={[
+            { value: "all", label: "All", count: qualifiedLeads.length },
+            ...EMAIL_STATUS_OPTIONS.map((o) => ({
+              value: o.value,
+              label: o.label,
+              count: qualifiedLeads.filter((l) => l.email_status === o.value).length,
+            })),
+          ]}
+        />
+        <p
+          className="ml-auto text-[12px] font-mono text-[var(--text-tertiary)]"
+          style={{ fontVariantNumeric: "tabular-nums" }}
         >
-          <SelectTrigger className="w-56">
-            <SelectValue placeholder="Status: all" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Status: all</SelectItem>
-            {EMAIL_STATUS_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="ml-auto text-sm text-muted-foreground">
-          {visible.length.toLocaleString()} of {qualifiedLeads.length.toLocaleString()} leads
+          {visible.length.toLocaleString("en-GB")} of {qualifiedLeads.length.toLocaleString("en-GB")} leads
         </p>
       </div>
 

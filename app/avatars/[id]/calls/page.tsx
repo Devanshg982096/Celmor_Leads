@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import ChannelHeader from "@/components/channels/ChannelHeader";
 import CallsView from "@/components/channels/CallsView";
+import ChannelTabs from "@/components/avatars/ChannelTabs";
 import { createClient } from "@/lib/supabase/server";
 import { listProfiles } from "@/lib/avatars/leads-actions";
 import {
@@ -64,10 +65,16 @@ export default async function CallsChannelPage({
         />
       }
     >
-      <div className="mb-6">
-        <h1 className="text-[28px] font-semibold tracking-tight text-[var(--text-primary)]">
-          Calls
-        </h1>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.07em] text-[var(--accent-soft)]">
+            {avatar.name}
+          </p>
+          <h1 className="font-display text-[30px] leading-tight tracking-[-0.015em] text-[var(--text-primary)]">
+            Calls
+          </h1>
+        </div>
+        <ChannelTabs avatarId={id} />
       </div>
 
       <CallsView leads={leads} profiles={profiles} />

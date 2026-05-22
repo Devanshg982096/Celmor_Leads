@@ -14,13 +14,7 @@ import OwnerCell from "@/components/leads/OwnerCell";
 import QualifiedCell from "@/components/leads/QualifiedCell";
 import LeadDetailDrawer from "@/components/leads/LeadDetailDrawer";
 import KpiBar, { percent, type Kpi } from "@/components/channels/KpiBar";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import ChipRow from "@/components/channels/ChipRow";
 import {
   CALL_STATUS_BADGE,
   CALL_STATUS_OPTIONS,
@@ -128,24 +122,23 @@ export default function CallsView({ leads: initialLeads, profiles }: Props) {
       <KpiBar kpis={kpis} />
 
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <Select
+        <ChipRow<CallStatus | "all">
           value={statusFilter}
-          onValueChange={(v) => setStatusFilter((v ?? "all") as CallStatus | "all")}
+          onChange={setStatusFilter}
+          options={[
+            { value: "all", label: "All", count: qualifiedLeads.length },
+            ...CALL_STATUS_OPTIONS.map((o) => ({
+              value: o.value,
+              label: o.label,
+              count: qualifiedLeads.filter((l) => l.call_status === o.value).length,
+            })),
+          ]}
+        />
+        <p
+          className="ml-auto text-[12px] font-mono text-[var(--text-tertiary)]"
+          style={{ fontVariantNumeric: "tabular-nums" }}
         >
-          <SelectTrigger className="w-56">
-            <SelectValue placeholder="Status: all" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Status: all</SelectItem>
-            {CALL_STATUS_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="ml-auto text-sm text-muted-foreground">
-          {visible.length.toLocaleString()} of {qualifiedLeads.length.toLocaleString()} leads
+          {visible.length.toLocaleString("en-GB")} of {qualifiedLeads.length.toLocaleString("en-GB")} leads
         </p>
       </div>
 

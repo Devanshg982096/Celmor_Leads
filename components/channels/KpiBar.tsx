@@ -1,28 +1,36 @@
-import { Card, CardContent } from "@/components/ui/card";
+import KpiCard, { KpiStrip } from "@/components/charts/KpiCard";
 
 export interface Kpi {
   label: string;
   value: string;
   /** Optional smaller help text under the value */
   hint?: string;
+  /** Optional inline delta pill */
+  delta?: {
+    label: string;
+    direction: "up" | "down" | "flat";
+  };
 }
 
+/**
+ * Channel-page KPI strip. Internally uses the redesign primitives
+ * (KpiStrip wraps multiple KpiCard cells so the panel reads as one).
+ * Keeps the same `kpis` prop shape so existing callers don't change.
+ */
 export default function KpiBar({ kpis }: { kpis: Kpi[] }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
-      {kpis.map((kpi) => (
-        <Card key={kpi.label}>
-          <CardContent className="p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {kpi.label}
-            </p>
-            <p className="text-2xl font-bold tracking-tight mt-1">{kpi.value}</p>
-            {kpi.hint && (
-              <p className="text-xs text-muted-foreground mt-1">{kpi.hint}</p>
-            )}
-          </CardContent>
-        </Card>
-      ))}
+    <div className="mb-6">
+      <KpiStrip>
+        {kpis.map((kpi) => (
+          <KpiCard
+            key={kpi.label}
+            label={kpi.label}
+            value={kpi.value}
+            hint={kpi.hint}
+            delta={kpi.delta}
+          />
+        ))}
+      </KpiStrip>
     </div>
   );
 }
