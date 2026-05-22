@@ -54,20 +54,39 @@
   /* Narada brand tokens */
   --bg-base: #FAFAFA;
   --bg-elevated: #FFFFFF;
+  --bg-elevated-2: #FAFAFA;
   --bg-overlay: #F4F4F5;
+  --bg-hover: #EFEFF1;
   --border-subtle: #E5E5E7;
   --border-default: #D4D4D8;
+  --border-strong: #B4B4BB;
   --text-primary: #0A0A0B;
   --text-secondary: #52525B;
-  --text-tertiary: #A1A1AA;
+  --text-tertiary: #71717A;
+  --text-quaternary: #B4B4BB;
   --accent-primary: #4F46E5;
   --accent-hover: #6366F1;
-  --accent-soft: #A5B4FC;
-  --accent-subtle: rgba(99, 102, 241, 0.1);
+  --accent-soft: #6366F1;
+  --accent-subtle: rgba(99, 102, 241, 0.10);
+  --accent-glow: rgba(99, 102, 241, 0.28);
+  --accent-ink: #0B0B1A;
   --status-success: #10B981;
+  --status-success-bg: rgba(16, 185, 129, 0.10);
   --status-warning: #F59E0B;
+  --status-warning-bg: rgba(245, 158, 11, 0.10);
   --status-danger: #EF4444;
+  --status-danger-bg: rgba(239, 68, 68, 0.10);
+  --status-info: #2563EB;
+  --status-info-bg: rgba(37, 99, 235, 0.10);
   --status-neutral: #71717A;
+  --status-neutral-bg: rgba(113, 113, 122, 0.10);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.10), 0 4px 12px rgba(0, 0, 0, 0.06);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur: 180ms;
+  /* Density (table row height) — overridable by .density-* class */
+  --row-h: 40px;
 
   /* shadcn token mapping (light) */
   --background: var(--bg-base);
@@ -103,17 +122,37 @@
 /* ─── Dark mode ───────────────────────────────────────────────────────── */
 .dark {
   --bg-base: #0A0A0B;
-  --bg-elevated: #141416;
-  --bg-overlay: #1C1C1F;
-  --border-subtle: #26262A;
-  --border-default: #2E2E33;
+  --bg-elevated: #131316;
+  --bg-elevated-2: #18181C;
+  --bg-overlay: #1C1C20;
+  --bg-hover: #1F1F24;
+  --border-subtle: #1F1F23;
+  --border-default: #2A2A2F;
+  --border-strong: #36363C;
   --text-primary: #F5F5F7;
-  --text-secondary: #9CA3AF;
-  --text-tertiary: #6B7280;
+  --text-secondary: #A1A1A8;
+  --text-tertiary: #6B6B72;
+  --text-quaternary: #4A4A50;
   --accent-primary: #6366F1;
   --accent-hover: #818CF8;
   --accent-soft: #A5B4FC;
-  --accent-subtle: rgba(99, 102, 241, 0.12);
+  --accent-subtle: rgba(99, 102, 241, 0.14);
+  --accent-glow: rgba(99, 102, 241, 0.28);
+  --accent-ink: #0B0B1A;
+  /* Status — slightly softer in dark mode */
+  --status-success: #34D399;
+  --status-success-bg: rgba(52, 211, 153, 0.12);
+  --status-warning: #FBBF24;
+  --status-warning-bg: rgba(251, 191, 36, 0.12);
+  --status-danger: #F87171;
+  --status-danger-bg: rgba(248, 113, 113, 0.12);
+  --status-info: #60A5FA;
+  --status-info-bg: rgba(96, 165, 250, 0.12);
+  --status-neutral: #71717A;
+  --status-neutral-bg: rgba(113, 113, 122, 0.14);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.35);
 
   --background: var(--bg-base);
   --foreground: var(--text-primary);
@@ -179,3 +218,87 @@
     font-weight: 500;
   }
 }
+
+/* ─── Redesign utility classes ─────────────────────────────────────────── */
+
+/* Questrial display family for big numbers + page heroes */
+.font-display {
+  font-family: var(--font-questrial), "Questrial", var(--font-geist-sans), system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* KPI strip: cards joined by 1px borders inside a single wrapping border. */
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1px;
+  background: var(--border-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.kpi-strip > .kpi-cell {
+  background: var(--bg-elevated);
+}
+
+/* Chevron-ribbon LinkedIn funnel: clip-path step shape. */
+.funnel-step {
+  background: var(--bg-overlay);
+  padding: 12px 14px 12px 22px;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%);
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  transition: background var(--dur);
+}
+.funnel-step:first-child {
+  padding-left: 14px;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%);
+}
+.funnel-step:last-child {
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 10px 50%);
+}
+.funnel-step.is-active {
+  background: var(--accent-subtle);
+}
+.funnel-step.is-dead {
+  background: var(--status-danger-bg);
+}
+
+/* Channel-tile theme glow on hover */
+.channel-tile {
+  position: relative;
+  overflow: hidden;
+}
+.channel-tile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 100% 0%, var(--tile-glow, transparent) 0%, transparent 55%);
+  opacity: 0;
+  transition: opacity 280ms var(--ease-out);
+  pointer-events: none;
+}
+.channel-tile:hover::before {
+  opacity: 1;
+}
+
+/* Backdrop-blur top bar */
+.topbar-glass {
+  background: color-mix(in srgb, var(--bg-base) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Bulk action bar: accent border + soft glow halo */
+.bulk-bar-glow {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--accent-primary);
+  border-radius: 6px;
+  box-shadow: 0 0 0 4px var(--accent-subtle);
+}
+
+/* Density toggle (table row height) */
+.density-compact { --row-h: 32px; }
+.density-cozy    { --row-h: 40px; }
+.density-comfy   { --row-h: 52px; }

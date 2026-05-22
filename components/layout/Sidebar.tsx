@@ -10,6 +10,7 @@ import {
   Settings,
 } from "lucide-react";
 import NaradaLogo from "@/components/brand/NaradaLogo";
+import UserAvatarBubble from "@/components/ui/UserAvatarBubble";
 import { cn } from "@/lib/utils";
 import type { Avatar } from "@/lib/types";
 
@@ -18,23 +19,6 @@ const STORAGE_KEY = "narada-sidebar-collapsed";
 interface Props {
   avatars: Pick<Avatar, "id" | "name">[];
   user: { id: string; displayName: string };
-}
-
-function initialsOf(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "—";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-/**
- * Deterministic hue from the user id so each teammate gets a stable colour
- * for their avatar circle.
- */
-function hueFromId(id: string): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return h % 360;
 }
 
 export default function Sidebar({ avatars, user }: Props) {
@@ -62,8 +46,6 @@ export default function Sidebar({ avatars, user }: Props) {
     return match[1];
   })();
   const settingsActive = pathname.startsWith("/settings");
-  const initials = initialsOf(user.displayName);
-  const hue = hueFromId(user.id);
 
   return (
     <aside
@@ -139,13 +121,17 @@ export default function Sidebar({ avatars, user }: Props) {
                       className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r bg-[var(--accent-primary)]"
                     />
                   )}
-                  {/* Coloured dot serves as the icon when collapsed too. */}
+                  {/* Coloured dot serves as the icon when collapsed too.
+                      Active dot picks up a soft glow from --accent-glow. */}
                   <span
-                    className="size-2 shrink-0 rounded-full"
+                    className="size-[6px] shrink-0 rounded-full"
                     style={{
                       backgroundColor: active
                         ? "var(--accent-primary)"
-                        : "var(--text-tertiary)",
+                        : "var(--text-quaternary)",
+                      boxShadow: active
+                        ? "0 0 8px var(--accent-glow)"
+                        : undefined,
                     }}
                   />
                   {!collapsed && (
@@ -202,13 +188,7 @@ export default function Sidebar({ avatars, user }: Props) {
             collapsed ? "justify-center px-0" : "px-2",
           )}
         >
-          <span
-            className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-            style={{ backgroundColor: `hsl(${hue} 60% 45%)` }}
-            aria-hidden
-          >
-            {initials}
-          </span>
+          <UserAvatarBubble id={user.id} name={user.displayName} size={26} />
           {!collapsed && (
             <span className="truncate text-[var(--text-primary)]">
               {user.displayName}
