@@ -265,7 +265,10 @@
   background: var(--status-danger-bg);
 }
 
-/* Channel-tile theme glow on hover */
+/* Channel-tile theme glow on hover. Both the glow colour and the hover
+   border colour come from inline CSS variables (--tile-glow, --tile-border)
+   set on each tile, so the component stays a server-renderable component
+   (no onMouseEnter/Leave required). */
 .channel-tile {
   position: relative;
   overflow: hidden;
@@ -281,6 +284,9 @@
 }
 .channel-tile:hover::before {
   opacity: 1;
+}
+.channel-tile:hover {
+  border-color: var(--tile-border, var(--border-default));
 }
 
 /* Backdrop-blur top bar */

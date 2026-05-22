@@ -51,20 +51,16 @@ export default function ChannelTile({
     <Link
       href={href}
       className={cn(
-        "channel-tile group/tile relative flex min-h-[320px] flex-col rounded-xl border bg-[var(--bg-elevated)] p-7 pb-6 transition-[transform,border-color] duration-[180ms] focus:outline-none",
+        "channel-tile group/tile relative flex min-h-[320px] flex-col rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-7 pb-6 transition-[transform,border-color] duration-[180ms] focus:outline-none",
         "hover:-translate-y-0.5 hover:shadow-md",
       )}
-      style={{
-        borderColor: "var(--border-subtle)",
-        // Tile-specific theme — consumed by .channel-tile::before glow and the
-        // colour assignments below.
-        ["--tile-glow" as string]: theme.glow,
-      }}
-      onMouseEnter={(e) =>
-        (e.currentTarget.style.borderColor = theme.border)
-      }
-      onMouseLeave={(e) =>
-        (e.currentTarget.style.borderColor = "var(--border-subtle)")
+      style={
+        {
+          // Tile-specific CSS vars consumed by .channel-tile::before
+          // (glow) and .channel-tile:hover (border colour).
+          "--tile-glow": theme.glow,
+          "--tile-border": theme.border,
+        } as React.CSSProperties
       }
     >
       {/* Head: icon + label/title (+ optional right kicker) */}
