@@ -8,6 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import type { BadgeVariant } from "@/lib/leads/labels";
 
 export interface StatusOption<T extends string> {
   value: T;
@@ -17,7 +18,7 @@ export interface StatusOption<T extends string> {
 interface Props<T extends string> {
   value: T;
   options: StatusOption<T>[];
-  variantFor: Record<T, "default" | "secondary" | "outline" | "destructive">;
+  variantFor: Record<T, BadgeVariant>;
   /**
    * Optional suffix inside the badge (e.g. "4d ago").
    */

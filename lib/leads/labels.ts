@@ -51,34 +51,39 @@ export const LEAD_STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
   { value: "dead", label: "Dead" },
 ];
 
-export const LEAD_STATUS_BADGE: Record<
-  LeadStatus,
-  "default" | "secondary" | "outline" | "destructive"
-> = {
+/**
+ * The full set of Badge variants we allow for status cells.
+ * Mirrors the variants exported from components/ui/badge.tsx.
+ */
+export type BadgeVariant =
+  | "default"
+  | "secondary"
+  | "outline"
+  | "destructive"
+  | "success"
+  | "warning"
+  | "info"
+  | "ghost";
+
+export const LEAD_STATUS_BADGE: Record<LeadStatus, BadgeVariant> = {
   new: "secondary",
-  active: "default",
+  active: "info",
   unqualified: "outline",
-  won: "default",
+  won: "success",
   dead: "destructive",
 };
 
-export const EMAIL_STATUS_BADGE: Record<
-  EmailStatus,
-  "default" | "secondary" | "outline" | "destructive"
-> = {
+export const EMAIL_STATUS_BADGE: Record<EmailStatus, BadgeVariant> = {
   none: "outline",
-  smartlead_sent: "secondary",
-  replied: "default",
+  smartlead_sent: "info",
+  replied: "success",
   bounced: "destructive",
 };
 
-export const LINKEDIN_STAGE_BADGE: Record<
-  LinkedInStage,
-  "default" | "secondary" | "outline" | "destructive"
-> = {
+export const LINKEDIN_STAGE_BADGE: Record<LinkedInStage, BadgeVariant> = {
   none: "outline",
   connection_sent: "secondary",
-  connection_accepted: "secondary",
+  connection_accepted: "info",
   first_message: "default",
   first_followup: "default",
   second_followup: "default",
@@ -86,14 +91,11 @@ export const LINKEDIN_STAGE_BADGE: Record<
   dead: "destructive",
 };
 
-export const CALL_STATUS_BADGE: Record<
-  CallStatus,
-  "default" | "secondary" | "outline" | "destructive"
-> = {
+export const CALL_STATUS_BADGE: Record<CallStatus, BadgeVariant> = {
   not_called: "outline",
-  called: "secondary",
-  voicemail: "secondary",
-  reached: "default",
+  called: "info",
+  voicemail: "warning",
+  reached: "success",
 };
 
 /**
