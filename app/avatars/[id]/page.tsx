@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Phone, Users, Mail, Table2 } from "lucide-react";
-import AppHeader from "@/components/AppHeader";
+import AppShell from "@/components/layout/AppShell";
 import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { getChannelStats } from "@/lib/avatars/channel-stats";
@@ -57,58 +57,55 @@ export default async function AvatarHubPage({
   ] as const;
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <AppHeader />
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
-        <div className="mb-4">
-          <Link href="/" className="text-sm text-muted-foreground hover:underline">
-            ← All Avatars
-          </Link>
-        </div>
+    <AppShell
+      breadcrumb={[
+        { label: "Avatars", href: "/" },
+        { label: avatar.name },
+      ]}
+    >
+      <div className="mb-8">
+        <h1 className="text-[28px] font-semibold tracking-tight text-[var(--text-primary)]">
+          {avatar.name}
+        </h1>
+        <p className="text-sm text-[var(--text-secondary)] mt-1">
+          {stats.total.toLocaleString()} leads · pick a channel to work in
+        </p>
+      </div>
 
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight">{avatar.name}</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {stats.total.toLocaleString()} leads · pick a channel to work in
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {cards.map((c) => {
-            const Icon = c.icon;
-            return (
-              <Link
-                key={c.href}
-                href={c.href}
-                className="group block focus:outline-none"
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl">
+        {cards.map((c) => {
+          const Icon = c.icon;
+          const emphasised = "emphasised" in c && c.emphasised;
+          return (
+            <Link
+              key={c.href}
+              href={c.href}
+              className="group block focus:outline-none"
+            >
+              <Card
+                className={
+                  "h-full transition-colors group-hover:border-[var(--border-default)] " +
+                  (emphasised ? "border-[var(--accent-primary)]/40" : "")
+                }
               >
-                <Card
-                  className={
-                    "h-full transition-shadow group-hover:shadow-md group-focus-visible:shadow-md " +
-                    ("emphasised" in c && c.emphasised
-                      ? "border-primary/40"
-                      : "")
-                  }
-                >
-                  <CardContent className="p-6 flex flex-col gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-md bg-primary/10 text-primary p-2">
-                        <Icon className="size-5" />
-                      </div>
-                      <h2 className="text-lg font-semibold leading-none">
-                        {c.title}
-                      </h2>
+                <CardContent className="p-6 flex flex-col gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-md bg-[var(--accent-subtle)] text-[var(--accent-primary)] p-2">
+                      <Icon className="size-5" />
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {c.summary}
-                    </p>
-                  </CardContent>
-                </Card>
-              </Link>
-            );
-          })}
-        </div>
-      </main>
-    </div>
+                    <h2 className="text-base font-semibold leading-none text-[var(--text-primary)]">
+                      {c.title}
+                    </h2>
+                  </div>
+                  <p className="text-sm text-[var(--text-secondary)]">
+                    {c.summary}
+                  </p>
+                </CardContent>
+              </Card>
+            </Link>
+          );
+        })}
+      </div>
+    </AppShell>
   );
 }

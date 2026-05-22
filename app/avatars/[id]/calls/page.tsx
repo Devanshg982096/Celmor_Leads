@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import AppHeader from "@/components/AppHeader";
+import AppShell from "@/components/layout/AppShell";
 import ChannelHeader from "@/components/channels/ChannelHeader";
 import CallsView from "@/components/channels/CallsView";
 import { createClient } from "@/lib/supabase/server";
@@ -21,7 +21,7 @@ export default async function CallsChannelPage({
 }) {
   const { id } = await params;
   const { my } = await searchParams;
-  const myLeadsOnly = my !== "0"; // default ON
+  const myLeadsOnly = my !== "0";
 
   const supabase = await createClient();
   const { data: avatarRow } = await supabase
@@ -47,21 +47,30 @@ export default async function CallsChannelPage({
   });
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <AppHeader />
-      <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">
+    <AppShell
+      fullBleed
+      breadcrumb={[
+        { label: "Avatars", href: "/" },
+        { label: avatar.name, href: `/avatars/${id}` },
+        { label: "Calls" },
+      ]}
+      actions={
         <ChannelHeader
           avatars={avatars}
           avatarId={id}
-          avatarName={avatar.name}
-          channel="Calls"
           channelSlug="calls"
           myLeadsOnly={myLeadsOnly}
           canFilterByMe={!!currentUserId}
         />
+      }
+    >
+      <div className="mb-6">
+        <h1 className="text-[28px] font-semibold tracking-tight text-[var(--text-primary)]">
+          Calls
+        </h1>
+      </div>
 
-        <CallsView leads={leads} profiles={profiles} />
-      </main>
-    </div>
+      <CallsView leads={leads} profiles={profiles} />
+    </AppShell>
   );
 }

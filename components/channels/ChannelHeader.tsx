@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Select,
@@ -14,20 +13,20 @@ import type { Avatar } from "@/lib/types";
 interface Props {
   avatars: Pick<Avatar, "id" | "name">[];
   avatarId: string;
-  avatarName: string;
-  channel: "Calls" | "LinkedIn" | "Emails";
-  /** kebab-case URL segment for the channel route */
   channelSlug: "calls" | "linkedin" | "emails";
   myLeadsOnly: boolean;
   /** True when the current user has no Supabase id — disables the toggle. */
   canFilterByMe: boolean;
 }
 
+/**
+ * Right-aligned actions for channel pages: My leads toggle + avatar switcher.
+ * Rendered inside AppShell's TopBar `actions` slot — the breadcrumb is
+ * handled by the shell itself.
+ */
 export default function ChannelHeader({
   avatars,
   avatarId,
-  avatarName,
-  channel,
   channelSlug,
   myLeadsOnly,
   canFilterByMe,
@@ -35,7 +34,6 @@ export default function ChannelHeader({
   const router = useRouter();
 
   function switchAvatar(nextId: string) {
-    // Preserve the my-leads param when jumping between avatars
     const params = !myLeadsOnly ? "?my=0" : "";
     router.push(`/avatars/${nextId}/${channelSlug}${params}`);
   }
@@ -48,49 +46,33 @@ export default function ChannelHeader({
   }
 
   return (
-    <div className="space-y-3 mb-4">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/" className="hover:underline">
-          Avatars
-        </Link>
-        <span>/</span>
-        <Link href={`/avatars/${avatarId}`} className="hover:underline">
-          {avatarName}
-        </Link>
-        <span>/</span>
-        <span className="text-foreground">{channel}</span>
-      </div>
+    <>
+      <button
+        type="button"
+        onClick={toggleMyLeads}
+        disabled={!canFilterByMe}
+        className={
+          "rounded-md border px-3 py-1.5 text-sm transition-colors disabled:opacity-50 " +
+          (myLeadsOnly
+            ? "bg-[var(--accent-primary)] text-white border-[var(--accent-primary)]"
+            : "border-[var(--border-default)] bg-transparent text-[var(--text-primary)] hover:bg-[var(--bg-overlay)]")
+        }
+      >
+        My leads only
+      </button>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">{channel}</h1>
-
-        <button
-          type="button"
-          onClick={toggleMyLeads}
-          disabled={!canFilterByMe}
-          className={
-            "rounded-md border px-3 py-1.5 text-sm transition-colors disabled:opacity-50 " +
-            (myLeadsOnly
-              ? "bg-primary text-primary-foreground border-primary"
-              : "bg-background hover:bg-accent")
-          }
-        >
-          My leads only
-        </button>
-
-        <Select value={avatarId} onValueChange={(v) => switchAvatar(v ?? avatarId)}>
-          <SelectTrigger className="w-64 ml-auto">
-            <SelectValue placeholder="Switch avatar" />
-          </SelectTrigger>
-          <SelectContent>
-            {avatars.map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                {a.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-    </div>
+      <Select value={avatarId} onValueChange={(v) => switchAvatar(v ?? avatarId)}>
+        <SelectTrigger className="w-56">
+          <SelectValue placeholder="Switch avatar" />
+        </SelectTrigger>
+        <SelectContent>
+          {avatars.map((a) => (
+            <SelectItem key={a.id} value={a.id}>
+              {a.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </>
   );
 }

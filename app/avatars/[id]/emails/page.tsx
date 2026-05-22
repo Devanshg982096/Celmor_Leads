@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import AppHeader from "@/components/AppHeader";
+import AppShell from "@/components/layout/AppShell";
 import ChannelHeader from "@/components/channels/ChannelHeader";
 import EmailsView from "@/components/channels/EmailsView";
 import { createClient } from "@/lib/supabase/server";
@@ -47,21 +47,30 @@ export default async function EmailsChannelPage({
   });
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <AppHeader />
-      <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">
+    <AppShell
+      fullBleed
+      breadcrumb={[
+        { label: "Avatars", href: "/" },
+        { label: avatar.name, href: `/avatars/${id}` },
+        { label: "Emails" },
+      ]}
+      actions={
         <ChannelHeader
           avatars={avatars}
           avatarId={id}
-          avatarName={avatar.name}
-          channel="Emails"
           channelSlug="emails"
           myLeadsOnly={myLeadsOnly}
           canFilterByMe={!!currentUserId}
         />
+      }
+    >
+      <div className="mb-6">
+        <h1 className="text-[28px] font-semibold tracking-tight text-[var(--text-primary)]">
+          Emails
+        </h1>
+      </div>
 
-        <EmailsView leads={leads} profiles={profiles} />
-      </main>
-    </div>
+      <EmailsView leads={leads} profiles={profiles} />
+    </AppShell>
   );
 }
