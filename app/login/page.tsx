@@ -1,6 +1,6 @@
 import LoginForm from "@/components/auth/LoginForm";
 
-export const metadata = { title: "Sign in — Celmor Leads" };
+export const metadata = { title: "Sign in — Narada" };
 
 export default function LoginPage() {
   return <LoginForm />;

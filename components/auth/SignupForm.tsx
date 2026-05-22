@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import NaradaLogo from "@/components/brand/NaradaLogo";
 import { signup } from "@/lib/auth/actions";
 
 export default function SignupForm() {
@@ -30,11 +31,13 @@ export default function SignupForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="space-y-1 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">Create account</h1>
-          <p className="text-sm text-muted-foreground">Celmor Leads — internal access only</p>
+    <div className="min-h-screen flex items-center justify-center px-4 bg-[var(--bg-base)]">
+      <div className="w-full max-w-[400px] rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-8">
+        <div className="flex flex-col items-center text-center mb-8">
+          <NaradaLogo size="lg" />
+          <p className="text-xs mt-4 text-[var(--text-secondary)]">
+            Create your Narada account
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -45,7 +48,7 @@ export default function SignupForm() {
               name="display_name"
               type="text"
               autoComplete="name"
-              placeholder="Dhruv"
+              placeholder="Devansh"
               required
               disabled={isPending}
             />
@@ -90,7 +93,7 @@ export default function SignupForm() {
           </div>
 
           {error && (
-            <p className="text-sm text-destructive">{error}</p>
+            <p className="text-sm text-[var(--status-danger)]">{error}</p>
           )}
 
           <Button type="submit" className="w-full" disabled={isPending}>
@@ -98,9 +101,12 @@ export default function SignupForm() {
           </Button>
         </form>
 
-        <p className="text-center text-sm text-muted-foreground">
+        <p className="text-center text-xs text-[var(--text-secondary)] mt-6">
           Already have an account?{" "}
-          <Link href="/login" className="underline underline-offset-4 hover:text-primary">
+          <Link
+            href="/login"
+            className="text-[var(--accent-primary)] underline-offset-2 hover:underline"
+          >
             Sign in
           </Link>
         </p>

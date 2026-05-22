@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import NaradaLogo from "@/components/brand/NaradaLogo";
-import ThemeToggle from "@/components/theme/ThemeToggle";
 import { login } from "@/lib/auth/actions";
 
 export default function LoginForm() {
@@ -23,28 +22,11 @@ export default function LoginForm() {
   }
 
   return (
-    <div
-      className="min-h-screen flex flex-col items-center justify-center px-4"
-      style={{ backgroundColor: "var(--bg-base)" }}
-    >
-      {/* Theme toggle in the top-right so you can sanity-check both modes */}
-      <div className="absolute right-6 top-6">
-        <ThemeToggle />
-      </div>
-
-      <div
-        className="w-full max-w-[400px] rounded-xl border p-8"
-        style={{
-          backgroundColor: "var(--bg-elevated)",
-          borderColor: "var(--border-subtle)",
-        }}
-      >
+    <div className="min-h-screen flex items-center justify-center px-4 bg-[var(--bg-base)]">
+      <div className="w-full max-w-[400px] rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-8">
         <div className="flex flex-col items-center text-center mb-8">
           <NaradaLogo size="lg" />
-          <p
-            className="text-xs mt-4"
-            style={{ color: "var(--text-secondary)" }}
-          >
+          <p className="text-xs mt-4 text-[var(--text-secondary)]">
             Lead intelligence for Celmor
           </p>
         </div>
@@ -76,23 +58,10 @@ export default function LoginForm() {
           </div>
 
           {error && (
-            <p
-              className="text-sm"
-              style={{ color: "var(--status-danger)" }}
-            >
-              {error}
-            </p>
+            <p className="text-sm text-[var(--status-danger)]">{error}</p>
           )}
 
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={isPending}
-            style={{
-              backgroundColor: "var(--accent-primary)",
-              color: "#FFFFFF",
-            }}
-          >
+          <Button type="submit" className="w-full" disabled={isPending}>
             {isPending ? "Signing in…" : "Sign in"}
           </Button>
         </form>
