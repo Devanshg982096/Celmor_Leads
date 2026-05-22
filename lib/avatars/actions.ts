@@ -5,25 +5,65 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Avatar, AvatarWithStats, Profile } from "@/lib/types";
 
+const WEEKS = 12;
+
 /**
- * Fetch all avatars with aggregated stats (owner split, contacted/replied/won).
+ * Fetch all avatars with aggregated stats:
+ *  - owner_split (per assignee)
+ *  - contacted / replied / won counters
+ *  - weekly_activity (12 weeks of activity_log counts, newest week last)
+ *
+ * Designed to be one round-trip per data source so the home page renders fast
+ * even with thousands of leads.
  */
 export async function listAvatarsWithStats(): Promise<AvatarWithStats[]> {
   const supabase = await createClient();
+  const sinceMs = Date.now() - WEEKS * 7 * 24 * 60 * 60 * 1000;
+  const sinceIso = new Date(sinceMs).toISOString();
 
-  const [{ data: avatars }, { data: profiles }, { data: leads }] = await Promise.all([
+  const [{ data: avatars }, { data: profiles }, { data: leads }, { data: activity }] = await Promise.all([
     supabase.from("avatars").select("*").order("created_at", { ascending: false }),
     supabase.from("profiles").select("*"),
     supabase
       .from("leads")
-      .select("avatar_id, owner_id, lead_status, email_status, linkedin_stage, call_status"),
+      .select(
+        "id, avatar_id, owner_id, lead_status, email_status, linkedin_stage, call_status",
+      ),
+    supabase
+      .from("activity_log")
+      .select("lead_id, created_at")
+      .gte("created_at", sinceIso),
   ]);
 
   if (!avatars) return [];
 
   const profilesById = new Map<string, Profile>(
-    (profiles ?? []).map((p) => [p.id, p as Profile])
+    (profiles ?? []).map((p) => [p.id, p as Profile]),
   );
+
+  // Map lead_id → avatar_id so we can route activity rows to their avatar.
+  const avatarIdByLeadId = new Map<string, string>();
+  for (const l of leads ?? []) {
+    avatarIdByLeadId.set((l as { id: string }).id, (l as { avatar_id: string }).avatar_id);
+  }
+
+  // Weekly activity per avatar.
+  const weeklyByAvatar = new Map<string, number[]>();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const todayDay = Math.floor(Date.now() / dayMs);
+  for (const row of activity ?? []) {
+    const r = row as { lead_id: string; created_at: string };
+    const avatarId = avatarIdByLeadId.get(r.lead_id);
+    if (!avatarId) continue;
+    const rowDay = Math.floor(new Date(r.created_at).getTime() / dayMs);
+    const daysAgo = todayDay - rowDay;
+    if (daysAgo < 0 || daysAgo >= WEEKS * 7) continue;
+    const weekIdx = WEEKS - 1 - Math.floor(daysAgo / 7);
+    if (!weeklyByAvatar.has(avatarId)) {
+      weeklyByAvatar.set(avatarId, new Array(WEEKS).fill(0));
+    }
+    weeklyByAvatar.get(avatarId)![weekIdx]++;
+  }
 
   return avatars.map((avatar: Avatar) => {
     const avatarLeads = (leads ?? []).filter((l) => l.avatar_id === avatar.id);
@@ -33,15 +73,17 @@ export async function listAvatarsWithStats(): Promise<AvatarWithStats[]> {
     for (const lead of avatarLeads) {
       ownerCounts.set(lead.owner_id, (ownerCounts.get(lead.owner_id) ?? 0) + 1);
     }
-    const owner_split = Array.from(ownerCounts.entries()).map(([owner_id, count]) => ({
-      display_name: owner_id ? profilesById.get(owner_id)?.display_name ?? "Unknown" : "Unassigned",
-      count,
-    }));
+    const owner_split = Array.from(ownerCounts.entries())
+      .map(([owner_id, count]) => ({
+        owner_id,
+        display_name: owner_id
+          ? profilesById.get(owner_id)?.display_name ?? "Unknown"
+          : "Unassigned",
+        count,
+      }))
+      .sort((a, b) => b.count - a.count);
 
-    // Progress glance:
-    //  contacted = any non-default state on email/linkedin/call
-    //  replied   = email_status = 'replied'
-    //  won       = lead_status = 'won'
+    // Progress glance
     let contacted = 0,
       replied = 0,
       won = 0;
@@ -55,7 +97,17 @@ export async function listAvatarsWithStats(): Promise<AvatarWithStats[]> {
       if (l.lead_status === "won") won++;
     }
 
-    return { ...avatar, owner_split, contacted, replied, won } as AvatarWithStats;
+    const weekly_activity =
+      weeklyByAvatar.get(avatar.id) ?? new Array(WEEKS).fill(0);
+
+    return {
+      ...avatar,
+      owner_split,
+      contacted,
+      replied,
+      won,
+      weekly_activity,
+    } as AvatarWithStats;
   });
 }
 

@@ -128,8 +128,10 @@ export type Lead = LeadRow;
 export type ActivityLog = ActivityLogRow;
 
 export interface AvatarWithStats extends AvatarRow {
-  owner_split: { display_name: string; count: number }[];
+  owner_split: { owner_id: string | null; display_name: string; count: number }[];
   contacted: number;
   replied: number;
   won: number;
+  /** 12-week weekly activity counts from activity_log — newest week last. */
+  weekly_activity: number[];
 }
