@@ -223,3 +223,46 @@ export async function createAvatarAndRedirect(input: {
   revalidatePath("/");
   redirect(`/avatars/${id}/master`);
 }
+
+/**
+ * Append more leads to an existing Avatar (no schema changes — only
+ * inserts into `leads`). Used by the Channels-hub "Add leads" dialog.
+ *
+ * Returns the count of leads inserted. Throws on auth/DB error.
+ */
+export async function appendLeadsToAvatar(input: {
+  avatarId: string;
+  leads: NewLeadInput[];
+}): Promise<{ inserted: number }> {
+  if (input.leads.length === 0) return { inserted: 0 };
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  // Verify the Avatar exists (any authenticated user can write per RLS).
+  const { data: avatar, error: avatarError } = await supabase
+    .from("avatars")
+    .select("id")
+    .eq("id", input.avatarId)
+    .maybeSingle();
+  if (avatarError) throw new Error(avatarError.message);
+  if (!avatar) throw new Error("Avatar not found");
+
+  const BATCH = 500;
+  for (let i = 0; i < input.leads.length; i += BATCH) {
+    const slice = input.leads.slice(i, i + BATCH);
+    const { error } = await supabase
+      .from("leads")
+      .insert(slice.map((l) => ({ ...l, avatar_id: input.avatarId })));
+    if (error)
+      throw new Error(
+        `Inserting leads ${i}-${i + slice.length}: ${error.message}`,
+      );
+  }
+
+  revalidatePath("/", "layout");
+  return { inserted: input.leads.length };
+}
