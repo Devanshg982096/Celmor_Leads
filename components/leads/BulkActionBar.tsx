@@ -21,6 +21,10 @@ interface Props {
   onSetLeadStatus: (status: LeadStatus) => Promise<void>;
 }
 
+/**
+ * Floating accent-bordered bar that appears above the table whenever rows are
+ * selected. Uses the redesign's --accent-subtle outer halo for affordance.
+ */
 export default function BulkActionBar({
   selectedCount,
   profiles,
@@ -38,80 +42,84 @@ export default function BulkActionBar({
     });
 
   return (
-    <div className="sticky top-0 z-10 -mx-6 px-6 py-2 bg-primary text-primary-foreground border-b shadow-sm">
-      <div className="mx-auto flex max-w-7xl items-center gap-3">
-        <span className="text-sm font-medium">
-          {selectedCount.toLocaleString()} selected
-        </span>
+    <div className="bulk-bar-glow mb-3 flex flex-wrap items-center gap-3 px-3 py-2">
+      <span
+        className="font-mono text-[13px] font-semibold text-[var(--accent-soft)]"
+        style={{ fontVariantNumeric: "tabular-nums" }}
+      >
+        {selectedCount.toLocaleString("en-GB")}
+      </span>
+      <span className="text-[12px] text-[var(--text-secondary)]">selected</span>
 
-        <div className="ml-4 flex flex-wrap items-center gap-2">
-          {/* Assign Owner */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              disabled={isPending}
-              className="rounded-md bg-primary-foreground/10 hover:bg-primary-foreground/20 px-3 py-1 text-sm border-0 disabled:opacity-60"
-            >
-              Assign owner ▾
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {profiles.map((p) => (
-                <DropdownMenuItem
-                  key={p.id}
-                  onClick={() => run(() => onAssignOwner(p.id))}
-                >
-                  {p.display_name}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => run(() => onAssignOwner(null))}
-                className="text-muted-foreground"
-              >
-                Unassigned
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Mark Smartlead Sent */}
-          <Button
-            variant="secondary"
-            size="sm"
+      <div className="ml-2 flex flex-wrap items-center gap-2">
+        {/* Assign Owner */}
+        <DropdownMenu>
+          <DropdownMenuTrigger
             disabled={isPending}
-            onClick={() => run(onMarkSmartleadSent)}
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-overlay)] px-2.5 text-[12px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-60"
           >
-            Mark Smartlead Sent
-          </Button>
-
-          {/* Set Lead Status */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              disabled={isPending}
-              className="rounded-md bg-primary-foreground/10 hover:bg-primary-foreground/20 px-3 py-1 text-sm border-0 disabled:opacity-60"
+            Assign owner
+            <span aria-hidden className="text-[var(--text-tertiary)]">▾</span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {profiles.map((p) => (
+              <DropdownMenuItem
+                key={p.id}
+                onClick={() => run(() => onAssignOwner(p.id))}
+              >
+                {p.display_name}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => run(() => onAssignOwner(null))}
+              className="text-[var(--text-tertiary)]"
             >
-              Set lead status ▾
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {LEAD_STATUS_OPTIONS.map((opt) => (
-                <DropdownMenuItem
-                  key={opt.value}
-                  onClick={() => run(() => onSetLeadStatus(opt.value))}
-                >
-                  {opt.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+              Unassigned
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-        <button
-          type="button"
-          onClick={onClear}
+        {/* Mark Smartlead Sent */}
+        <Button
+          variant="secondary"
+          size="sm"
           disabled={isPending}
-          className="ml-auto text-sm underline-offset-2 hover:underline opacity-90"
+          onClick={() => run(onMarkSmartleadSent)}
         >
-          Clear selection
-        </button>
+          Mark Smartlead Sent
+        </Button>
+
+        {/* Set Lead Status */}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            disabled={isPending}
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-overlay)] px-2.5 text-[12px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-60"
+          >
+            Set lead status
+            <span aria-hidden className="text-[var(--text-tertiary)]">▾</span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {LEAD_STATUS_OPTIONS.map((opt) => (
+              <DropdownMenuItem
+                key={opt.value}
+                onClick={() => run(() => onSetLeadStatus(opt.value))}
+              >
+                {opt.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
+
+      <button
+        type="button"
+        onClick={onClear}
+        disabled={isPending}
+        className="ml-auto text-[12px] text-[var(--text-tertiary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+      >
+        Clear
+      </button>
     </div>
   );
 }

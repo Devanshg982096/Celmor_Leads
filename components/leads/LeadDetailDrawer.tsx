@@ -1,18 +1,10 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+import { Mail, Phone, ExternalLink, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { labelFor } from "@/lib/apollo-mapping";
 import {
   CALL_STATUS_BADGE,
   CALL_STATUS_OPTIONS,
@@ -29,6 +21,8 @@ import {
   updateLeadNotes,
   type ActivityWithActor,
 } from "@/lib/leads/detail-actions";
+import { getLeadValue } from "@/lib/leads-columns";
+import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types";
 
 interface Props {
@@ -44,7 +38,11 @@ function labelOf<T extends string>(
   return opts.find((o) => o.value === value)?.label ?? value;
 }
 
-export default function LeadDetailDrawer({ leadId, onClose, onNotesSaved }: Props) {
+export default function LeadDetailDrawer({
+  leadId,
+  onClose,
+  onNotesSaved,
+}: Props) {
   const open = leadId !== null;
   const [lead, setLead] = useState<Lead | null>(null);
   const [activity, setActivity] = useState<ActivityWithActor[]>([]);
@@ -54,6 +52,7 @@ export default function LeadDetailDrawer({ leadId, onClose, onNotesSaved }: Prop
   const [isSaving, startSaveTransition] = useTransition();
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Load lead detail when leadId changes
   useEffect(() => {
     if (!leadId) return;
     let cancelled = false;
@@ -79,6 +78,21 @@ export default function LeadDetailDrawer({ leadId, onClose, onNotesSaved }: Prop
     };
   }, [leadId]);
 
+  // Escape closes the drawer; body scroll lock while open.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open, onClose]);
+
   function handleSaveNotes() {
     if (!leadId) return;
     setSaveError(null);
@@ -87,7 +101,7 @@ export default function LeadDetailDrawer({ leadId, onClose, onNotesSaved }: Prop
         await updateLeadNotes(leadId, notes);
         setSavedNotes(notes);
         onNotesSaved?.(leadId, notes);
-        // Optimistic: prepend a "Notes updated" entry so the user sees their change
+        // Optimistic prepend so the user sees their change immediately.
         setActivity((prev) => [
           {
             id: `local-${Date.now()}`,
@@ -106,73 +120,160 @@ export default function LeadDetailDrawer({ leadId, onClose, onNotesSaved }: Prop
   }
 
   const dirty = notes !== savedNotes;
+  const employees = lead ? getLeadValue(lead, "employees") : "";
+  const city = lead ? getLeadValue(lead, "city") : "";
 
   return (
-    <Sheet open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <SheetContent className="w-full sm:max-w-md md:max-w-lg p-0 overflow-y-auto">
-        <SheetHeader className="border-b">
-          <SheetTitle>{lead?.name ?? "Lead"}</SheetTitle>
-          <SheetDescription>
-            {lead?.title ? `${lead.title} · ` : ""}
-            {lead?.company ?? ""}
-          </SheetDescription>
-        </SheetHeader>
+    <>
+      {/* Overlay */}
+      <div
+        onClick={onClose}
+        className={cn(
+          "fixed inset-0 z-40 bg-black/60 transition-opacity duration-200",
+          "supports-[backdrop-filter]:backdrop-blur-[4px]",
+          open
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none",
+        )}
+        aria-hidden
+      />
 
-        <div className="p-4 space-y-6">
+      {/* Drawer */}
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-hidden={!open}
+        className={cn(
+          "fixed top-0 right-0 bottom-0 z-50 flex w-[480px] max-w-[96vw] flex-col",
+          "border-l border-[var(--border-default)] bg-[var(--bg-elevated)]",
+          "shadow-[0_16px_48px_rgba(0,0,0,0.5),0_4px_12px_rgba(0,0,0,0.35)]",
+          "transition-transform duration-[280ms]",
+        )}
+        style={{
+          transform: open ? "translateX(0)" : "translateX(100%)",
+          transitionTimingFunction: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+        }}
+      >
+        {/* Head */}
+        <header
+          className="flex flex-col gap-3 border-b px-6 pt-[22px] pb-[18px]"
+          style={{ borderColor: "var(--border-subtle)" }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="font-display text-[22px] font-normal leading-tight tracking-[-0.01em] text-[var(--text-primary)]">
+                {lead?.name ?? (loading ? "Loading…" : "Lead")}
+              </h2>
+              {(lead?.title || lead?.company) && (
+                <p className="mt-0.5 text-[13px] text-[var(--text-secondary)]">
+                  {lead?.title ? lead.title : ""}
+                  {lead?.title && lead?.company ? " · " : ""}
+                  {lead?.company ?? ""}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-overlay)] hover:text-[var(--text-primary)]"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+          {lead && (
+            <div className="flex flex-wrap gap-1.5">
+              <Badge variant={LEAD_STATUS_BADGE[lead.lead_status]}>
+                {labelOf(LEAD_STATUS_OPTIONS, lead.lead_status)}
+              </Badge>
+              <Badge variant={EMAIL_STATUS_BADGE[lead.email_status]}>
+                {labelOf(EMAIL_STATUS_OPTIONS, lead.email_status)}
+              </Badge>
+              <Badge variant={LINKEDIN_STAGE_BADGE[lead.linkedin_stage]}>
+                {labelOf(LINKEDIN_STAGE_OPTIONS, lead.linkedin_stage)}
+              </Badge>
+              <Badge variant={CALL_STATUS_BADGE[lead.call_status]}>
+                {labelOf(CALL_STATUS_OPTIONS, lead.call_status)}
+              </Badge>
+            </div>
+          )}
+        </header>
+
+        {/* Body */}
+        <div className="flex flex-1 flex-col gap-[22px] overflow-y-auto px-6 py-5">
           {loading && (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <p className="text-[13px] text-[var(--text-tertiary)]">Loading…</p>
           )}
 
           {!loading && lead && (
             <>
-              {/* Pipeline summary */}
-              <div className="flex flex-wrap gap-2">
-                <Badge variant={LEAD_STATUS_BADGE[lead.lead_status]}>
-                  {labelOf(LEAD_STATUS_OPTIONS, lead.lead_status)}
-                </Badge>
-                <Badge variant={EMAIL_STATUS_BADGE[lead.email_status]}>
-                  Email: {labelOf(EMAIL_STATUS_OPTIONS, lead.email_status)}
-                </Badge>
-                <Badge variant={LINKEDIN_STAGE_BADGE[lead.linkedin_stage]}>
-                  LinkedIn: {labelOf(LINKEDIN_STAGE_OPTIONS, lead.linkedin_stage)}
-                </Badge>
-                <Badge variant={CALL_STATUS_BADGE[lead.call_status]}>
-                  Call: {labelOf(CALL_STATUS_OPTIONS, lead.call_status)}
-                </Badge>
-              </div>
+              {/* Channels — quick action buttons */}
+              <section>
+                <SectionHeading>Channels</SectionHeading>
+                <div className="flex flex-wrap gap-2">
+                  {lead.email && (
+                    <a
+                      href={`mailto:${lead.email}`}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 text-[12.5px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
+                    >
+                      <Mail className="size-3.5" />
+                      Send email
+                    </a>
+                  )}
+                  {lead.linkedin_url && (
+                    <a
+                      href={lead.linkedin_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 text-[12.5px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
+                    >
+                      <ExternalLink className="size-3.5" />
+                      Open LinkedIn
+                    </a>
+                  )}
+                  {lead.phone && (
+                    <a
+                      href={`tel:${lead.phone}`}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 text-[12.5px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
+                    >
+                      <Phone className="size-3.5" />
+                      Call {lead.phone}
+                    </a>
+                  )}
+                </div>
+              </section>
 
               {/* Contact details */}
-              <div className="space-y-1.5 text-sm">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Contact
-                </h3>
-                <DetailRow label="Email" value={lead.email} href={`mailto:${lead.email}`} />
-                <DetailRow label="Phone" value={lead.phone} href={lead.phone ? `tel:${lead.phone}` : undefined} />
-                <DetailRow
-                  label="LinkedIn"
-                  value={lead.linkedin_url ? "Open profile ↗" : null}
-                  href={lead.linkedin_url ?? undefined}
-                  external
-                />
-                <DetailRow label="Company" value={lead.company} />
-                <DetailRow label="Title" value={lead.title} />
-              </div>
-
-              {/* Raw extra data, if any */}
-              {Object.keys(lead.raw_data ?? {}).length > 0 && (
-                <RawDataSection rawData={lead.raw_data} />
-              )}
-
-              <Separator />
+              <section>
+                <SectionHeading>Contact</SectionHeading>
+                <dl>
+                  <KvRow label="Email" value={lead.email} href={`mailto:${lead.email}`} />
+                  <KvRow
+                    label="Phone"
+                    value={lead.phone}
+                    href={lead.phone ? `tel:${lead.phone}` : undefined}
+                  />
+                  <KvRow
+                    label="LinkedIn"
+                    value={lead.linkedin_url ? "Open profile ↗" : null}
+                    href={lead.linkedin_url ?? undefined}
+                    external
+                  />
+                  <KvRow label="Company" value={lead.company} />
+                  <KvRow label="Title" value={lead.title} />
+                  {employees && <KvRow label="Employees" value={employees} />}
+                  {city && <KvRow label="City" value={city} />}
+                </dl>
+              </section>
 
               {/* Notes */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Notes
-                  </h3>
+              <section>
+                <div className="mb-2 flex items-center justify-between">
+                  <SectionHeading className="mb-0">Notes</SectionHeading>
                   {dirty && (
-                    <span className="text-xs text-muted-foreground">unsaved</span>
+                    <span className="text-[10.5px] uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+                      Unsaved
+                    </span>
                   )}
                 </div>
                 <Textarea
@@ -181,11 +282,14 @@ export default function LeadDetailDrawer({ leadId, onClose, onNotesSaved }: Prop
                   placeholder="Add a note about this lead…"
                   rows={5}
                   disabled={isSaving}
+                  className="min-h-[90px] bg-[var(--bg-overlay)]"
                 />
                 {saveError && (
-                  <p className="text-sm text-destructive">{saveError}</p>
+                  <p className="mt-2 text-[12px] text-[var(--status-danger)]">
+                    {saveError}
+                  </p>
                 )}
-                <div className="flex justify-end gap-2">
+                <div className="mt-2 flex justify-end gap-2">
                   {dirty && (
                     <Button
                       variant="ghost"
@@ -204,40 +308,75 @@ export default function LeadDetailDrawer({ leadId, onClose, onNotesSaved }: Prop
                     {isSaving ? "Saving…" : "Save notes"}
                   </Button>
                 </div>
-              </div>
-
-              <Separator />
+              </section>
 
               {/* Activity log */}
-              <div className="space-y-2">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Activity
-                </h3>
+              <section>
+                <SectionHeading>Activity</SectionHeading>
                 {activity.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No activity yet.</p>
+                  <p className="text-[13px] text-[var(--text-tertiary)]">
+                    No activity yet.
+                  </p>
                 ) : (
-                  <ol className="space-y-2">
+                  <ol>
                     {activity.map((a) => (
-                      <li key={a.id} className="text-sm">
-                        <span className="font-medium">{a.actor_name}</span>{" "}
-                        <span>{a.action}</span>
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {relativeTime(a.created_at)}
-                        </span>
+                      <li
+                        key={a.id}
+                        className="flex gap-3 border-b border-dashed py-2.5 last:border-b-0 text-[13px]"
+                        style={{ borderColor: "var(--border-subtle)" }}
+                      >
+                        <span
+                          aria-hidden
+                          className="mt-1.5 inline-block size-2 shrink-0 rounded-full"
+                          style={{ background: "var(--accent-primary)" }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[var(--text-primary)]">
+                            <span className="font-medium">{a.actor_name}</span>{" "}
+                            <span className="text-[var(--text-secondary)]">
+                              {a.action}
+                            </span>
+                          </p>
+                          <p
+                            className="mt-0.5 font-mono text-[11px] text-[var(--text-tertiary)]"
+                            style={{ fontVariantNumeric: "tabular-nums" }}
+                          >
+                            {relativeTime(a.created_at)}
+                          </p>
+                        </div>
                       </li>
                     ))}
                   </ol>
                 )}
-              </div>
+              </section>
             </>
           )}
         </div>
-      </SheetContent>
-    </Sheet>
+      </aside>
+    </>
   );
 }
 
-function DetailRow({
+function SectionHeading({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <h3
+      className={cn(
+        "mb-2.5 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]",
+        className,
+      )}
+    >
+      {children}
+    </h3>
+  );
+}
+
+function KvRow({
   label,
   value,
   href,
@@ -249,45 +388,27 @@ function DetailRow({
   external?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-[6rem_1fr] items-baseline gap-3">
-      <span className="text-muted-foreground text-xs">{label}</span>
+    <div
+      className="grid grid-cols-[90px_1fr] items-baseline gap-3 border-b py-[7px] text-[13px] last:border-b-0"
+      style={{ borderColor: "var(--border-subtle)" }}
+    >
+      <span className="text-[12px] text-[var(--text-tertiary)]">{label}</span>
       {value ? (
         href ? (
           <a
             href={href}
             target={external ? "_blank" : undefined}
             rel={external ? "noopener noreferrer" : undefined}
-            className="text-primary underline-offset-2 hover:underline truncate"
+            className="truncate text-[var(--accent-soft)] underline-offset-2 transition-colors hover:text-[var(--accent-hover)] hover:underline"
           >
             {value}
           </a>
         ) : (
-          <span className="truncate">{value}</span>
+          <span className="truncate text-[var(--text-primary)]">{value}</span>
         )
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-[var(--text-tertiary)]">—</span>
       )}
     </div>
-  );
-}
-
-function RawDataSection({ rawData }: { rawData: Record<string, unknown> }) {
-  const entries = Object.entries(rawData).filter(
-    ([k, v]) =>
-      v != null && String(v).trim() !== "" &&
-      !["name", "email", "company", "title", "linkedin_url", "phone"].includes(k)
-  );
-  if (entries.length === 0) return null;
-  return (
-    <details className="text-sm">
-      <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Other fields ({entries.length})
-      </summary>
-      <div className="mt-2 space-y-1">
-        {entries.map(([k, v]) => (
-          <DetailRow key={k} label={labelFor(k)} value={String(v)} />
-        ))}
-      </div>
-    </details>
   );
 }

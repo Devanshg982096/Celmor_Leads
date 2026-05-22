@@ -8,6 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import UserAvatarBubble from "@/components/ui/UserAvatarBubble";
 import type { Profile } from "@/lib/types";
 
 interface Props {
@@ -16,22 +17,37 @@ interface Props {
   onChange: (next: string | null) => void | Promise<void>;
 }
 
+/**
+ * Table owner cell. Shows a 20×20 colour-coded initials avatar + first name
+ * when assigned; "Unassigned" muted text otherwise. Click anywhere on the
+ * pill to open the assign-to dropdown.
+ */
 export default function OwnerCell({ ownerId, profiles, onChange }: Props) {
   const [isPending, startTransition] = useTransition();
   const current = ownerId ? profiles.find((p) => p.id === ownerId) : null;
-  const label = current?.display_name ?? "Unassigned";
+  const firstName = current
+    ? current.display_name.split(/\s+/)[0]
+    : null;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={isPending}
         onClick={(e) => e.stopPropagation()}
-        className={
-          "rounded px-1.5 py-0.5 text-sm border-0 bg-transparent hover:bg-accent disabled:opacity-60 " +
-          (current ? "text-foreground" : "text-muted-foreground")
-        }
+        className="inline-flex items-center gap-2 rounded-md border-0 bg-transparent px-1.5 py-0.5 text-[12.5px] transition-colors hover:bg-[var(--bg-overlay)] disabled:opacity-60"
       >
-        {label}
+        {current ? (
+          <>
+            <UserAvatarBubble
+              id={current.id}
+              name={current.display_name}
+              size={20}
+            />
+            <span className="text-[var(--text-primary)]">{firstName}</span>
+          </>
+        ) : (
+          <span className="text-[var(--text-tertiary)]">Unassigned</span>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
         {profiles.map((p) => (
@@ -45,8 +61,11 @@ export default function OwnerCell({ ownerId, profiles, onChange }: Props) {
             }}
             className={p.id === ownerId ? "font-medium" : undefined}
           >
-            {p.display_name}
-            {p.id === ownerId && <span className="ml-auto text-xs">✓</span>}
+            <UserAvatarBubble id={p.id} name={p.display_name} size={20} />
+            <span>{p.display_name}</span>
+            {p.id === ownerId && (
+              <span className="ml-auto text-[var(--text-tertiary)]">✓</span>
+            )}
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
@@ -57,10 +76,16 @@ export default function OwnerCell({ ownerId, profiles, onChange }: Props) {
               await onChange(null);
             });
           }}
-          className={ownerId === null ? "font-medium" : "text-muted-foreground"}
+          className={
+            ownerId === null
+              ? "font-medium"
+              : "text-[var(--text-tertiary)]"
+          }
         >
           Unassigned
-          {ownerId === null && <span className="ml-auto text-xs">✓</span>}
+          {ownerId === null && (
+            <span className="ml-auto text-[var(--text-tertiary)]">✓</span>
+          )}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
