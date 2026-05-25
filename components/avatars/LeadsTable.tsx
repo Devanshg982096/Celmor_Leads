@@ -1,6 +1,14 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import {
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useContext,
+  createContext,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import {
   useReactTable,
@@ -11,6 +19,7 @@ import {
   type SortingState,
   type ColumnDef,
 } from "@tanstack/react-table";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Table,
   TableBody,
@@ -69,6 +78,49 @@ interface Props {
   currentUserId: string;
 }
 
+// ─── Selection context ──────────────────────────────────────────────────
+// Keeps selection state out of the tanstack `columns` memo so toggling a
+// checkbox doesn't invalidate every column def (which would re-render all
+// ~6 heavy dropdown cells per row).
+interface SelectionCtx {
+  isSelected: (id: string) => boolean;
+  toggleRow: (id: string, check: boolean) => void;
+  toggleAllFiltered: (check: boolean) => void;
+  allFilteredSelected: boolean;
+  someFilteredSelected: boolean;
+}
+const SelectionContext = createContext<SelectionCtx | null>(null);
+function useSelection() {
+  const v = useContext(SelectionContext);
+  if (!v) throw new Error("SelectionContext missing");
+  return v;
+}
+
+function RowCheckbox({ id }: { id: string }) {
+  const { isSelected, toggleRow } = useSelection();
+  return (
+    <Checkbox
+      checked={isSelected(id)}
+      onCheckedChange={(v) => toggleRow(id, v === true)}
+      aria-label="Select row"
+      onClick={(e) => e.stopPropagation()}
+    />
+  );
+}
+
+function HeaderCheckbox() {
+  const { allFilteredSelected, someFilteredSelected, toggleAllFiltered } =
+    useSelection();
+  return (
+    <Checkbox
+      checked={allFilteredSelected}
+      indeterminate={someFilteredSelected && !allFilteredSelected}
+      onCheckedChange={(v) => toggleAllFiltered(v === true)}
+      aria-label="Select all filtered leads"
+    />
+  );
+}
+
 export default function LeadsTable({
   leads: initialLeads,
   visibleColumns,
@@ -85,12 +137,20 @@ export default function LeadsTable({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
 
-  // Optimistic helper: patch a lead in local state, run server action, revert on error.
+  // ref mirror of leads so optimisticPatch can read the previous snapshot
+  // without depending on `leads` (which would invalidate the columns memo
+  // every time a row changes).
+  const leadsRef = useRef(leads);
+  useEffect(() => {
+    leadsRef.current = leads;
+  }, [leads]);
+
+  // Stable optimistic helper.
   const optimisticPatch = useCallback(
     async (leadId: string, patch: Partial<Lead>, action: () => Promise<void>) => {
-      const previous = leads;
+      const previous = leadsRef.current;
       setLeads((curr) =>
-        curr.map((l) => (l.id === leadId ? { ...l, ...patch } : l))
+        curr.map((l) => (l.id === leadId ? { ...l, ...patch } : l)),
       );
       try {
         await action();
@@ -101,15 +161,13 @@ export default function LeadsTable({
         alert(err instanceof Error ? err.message : "Update failed.");
       }
     },
-    [leads]
+    [],
   );
 
   const filtered = useMemo(() => {
     const q = filters.q.trim().toLowerCase();
     return leads.filter((lead) => {
-      // Qualified filter (hide unqualified by default)
       if (!filters.show_unqualified && lead.qualified === "unqualified") return false;
-      // Owner filter
       if (filters.owner !== ALL) {
         if (filters.owner === "me") {
           if (lead.owner_id !== currentUserId) return false;
@@ -119,12 +177,10 @@ export default function LeadsTable({
           if (lead.owner_id !== filters.owner) return false;
         }
       }
-      // Status filters
       if (filters.lead_status !== ALL && lead.lead_status !== filters.lead_status) return false;
       if (filters.email_status !== ALL && lead.email_status !== filters.email_status) return false;
       if (filters.linkedin_stage !== ALL && lead.linkedin_stage !== filters.linkedin_stage) return false;
       if (filters.call_status !== ALL && lead.call_status !== filters.call_status) return false;
-      // Search
       if (!q) return true;
       return (
         lead.name.toLowerCase().includes(q) ||
@@ -139,50 +195,53 @@ export default function LeadsTable({
     filteredIds.length > 0 && filteredIds.every((id) => selected.has(id));
   const someFilteredSelected = filteredIds.some((id) => selected.has(id));
 
-  function toggleAllFiltered(check: boolean) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (check) filteredIds.forEach((id) => next.add(id));
-      else filteredIds.forEach((id) => next.delete(id));
-      return next;
-    });
-  }
+  const toggleAllFiltered = useCallback(
+    (check: boolean) => {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (check) filteredIds.forEach((id) => next.add(id));
+        else filteredIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    },
+    [filteredIds],
+  );
 
-  function toggleRow(id: string, check: boolean) {
+  const toggleRow = useCallback((id: string, check: boolean) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (check) next.add(id);
       else next.delete(id);
       return next;
     });
-  }
+  }, []);
 
+  const selectionCtx = useMemo<SelectionCtx>(
+    () => ({
+      isSelected: (id) => selected.has(id),
+      toggleRow,
+      toggleAllFiltered,
+      allFilteredSelected,
+      someFilteredSelected,
+    }),
+    [selected, toggleRow, toggleAllFiltered, allFilteredSelected, someFilteredSelected],
+  );
+
+  // ─── Columns ────────────────────────────────────────────────────────────
+  // Depends only on stable inputs (leads ref isn't used here; we use `leads`
+  // only for the "has any data" probe of fixed leading columns, which is
+  // OK because if you add or remove a lead the columns *should* recompute).
+  // Crucially: does NOT depend on `selected` anymore — that lives in context.
   const columns = useMemo<ColumnDef<Lead>[]>(() => {
     const cols: ColumnDef<Lead>[] = [];
 
-    // ─── Selection checkbox column ────────────────────────────────────────
     cols.push({
       id: "_select",
       enableSorting: false,
-      header: () => (
-        <Checkbox
-          checked={allFilteredSelected}
-          indeterminate={someFilteredSelected && !allFilteredSelected}
-          onCheckedChange={(v) => toggleAllFiltered(v === true)}
-          aria-label="Select all filtered leads"
-        />
-      ),
-      cell: ({ row }) => (
-        <Checkbox
-          checked={selected.has(row.original.id)}
-          onCheckedChange={(v) => toggleRow(row.original.id, v === true)}
-          aria-label="Select row"
-          onClick={(e) => e.stopPropagation()}
-        />
-      ),
+      header: () => <HeaderCheckbox />,
+      cell: ({ row }) => <RowCheckbox id={row.original.id} />,
     });
 
-    // Helper: build a normal data column for a given key.
     const buildDataColumn = (key: string): ColumnDef<Lead> => ({
       id: key,
       header: labelFor(key),
@@ -217,22 +276,18 @@ export default function LeadsTable({
       },
     });
 
-    // ─── 1. Fixed leading columns: Name, Company, Employees, City ────────
-    // Always shown if at least one lead has data for the column.
     const FIXED_LEADING = ["name", "company", "employees", "city"] as const;
     const hasAnyData = (key: string) =>
       leads.some((l) => (getLeadValue(l, key) ?? "").trim() !== "");
 
     const renderedKeys = new Set<string>();
     for (const key of FIXED_LEADING) {
-      // Always show name; for the rest, hide the column if no row has data for it.
       if (key === "name" || hasAnyData(key)) {
         cols.push(buildDataColumn(key));
         renderedKeys.add(key);
       }
     }
 
-    // ─── 2. Interactive pipeline columns (Owner before Email) ─────────────
     cols.push({
       id: "owner",
       header: "Owner",
@@ -244,7 +299,7 @@ export default function LeadsTable({
             profiles={profiles}
             onChange={(next) =>
               optimisticPatch(lead.id, { owner_id: next }, () =>
-                updateLeadOwner(lead.id, next)
+                updateLeadOwner(lead.id, next),
               )
             }
           />
@@ -274,7 +329,7 @@ export default function LeadsTable({
                   email_status: next,
                   email_status_updated_at: new Date().toISOString(),
                 },
-                () => updateEmailStatus(lead.id, next)
+                () => updateEmailStatus(lead.id, next),
               )
             }
           />
@@ -304,7 +359,7 @@ export default function LeadsTable({
                   linkedin_stage: next,
                   linkedin_stage_updated_at: new Date().toISOString(),
                 },
-                () => updateLinkedInStage(lead.id, next)
+                () => updateLinkedInStage(lead.id, next),
               )
             }
           />
@@ -334,7 +389,7 @@ export default function LeadsTable({
                   call_status: next,
                   call_status_updated_at: new Date().toISOString(),
                 },
-                () => updateCallStatus(lead.id, next)
+                () => updateCallStatus(lead.id, next),
               )
             }
           />
@@ -359,7 +414,7 @@ export default function LeadsTable({
                   lead_status: next,
                   lead_status_updated_at: new Date().toISOString(),
                 },
-                () => updateLeadStatus(lead.id, next)
+                () => updateLeadStatus(lead.id, next),
               )
             }
           />
@@ -367,7 +422,6 @@ export default function LeadsTable({
       },
     });
 
-    // Qualified column (after Status, before any other visible columns).
     cols.push({
       id: "qualified",
       header: "Qualified",
@@ -406,7 +460,6 @@ export default function LeadsTable({
       },
     });
 
-    // ─── 3. Other user-selected columns (everything not already shown) ───
     for (const key of visibleColumns) {
       if (renderedKeys.has(key)) continue;
       cols.push(buildDataColumn(key));
@@ -414,16 +467,7 @@ export default function LeadsTable({
     }
 
     return cols;
-  }, [
-    leads,
-    visibleColumns,
-    profiles,
-    optimisticPatch,
-    selected,
-    allFilteredSelected,
-    someFilteredSelected,
-    filteredIds,
-  ]);
+  }, [leads, visibleColumns, profiles, optimisticPatch]);
 
   const table = useReactTable({
     data: filtered,
@@ -435,12 +479,31 @@ export default function LeadsTable({
     getFilteredRowModel: getFilteredRowModel(),
   });
 
-  // Bulk action handlers — optimistically patch each selected lead, then run server action.
+  const rows = table.getRowModel().rows;
+
+  // ─── Virtualization ─────────────────────────────────────────────────────
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 44, // matches row height with py-2.5 + content
+    overscan: 12,
+  });
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
+  const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
+  const paddingBottom =
+    virtualItems.length > 0
+      ? totalSize - virtualItems[virtualItems.length - 1].end
+      : 0;
+
+  // ─── Bulk actions ───────────────────────────────────────────────────────
   async function bulkAssignOwner(ownerId: string | null) {
     const ids = Array.from(selected);
-    const previous = leads;
+    const previous = leadsRef.current;
     setLeads((curr) =>
-      curr.map((l) => (selected.has(l.id) ? { ...l, owner_id: ownerId } : l))
+      curr.map((l) => (selected.has(l.id) ? { ...l, owner_id: ownerId } : l)),
     );
     try {
       await bulkUpdateLeadOwner(ids, ownerId);
@@ -452,14 +515,14 @@ export default function LeadsTable({
 
   async function bulkMarkSmartleadSent() {
     const ids = Array.from(selected);
-    const previous = leads;
+    const previous = leadsRef.current;
     const now = new Date().toISOString();
     setLeads((curr) =>
       curr.map((l) =>
         selected.has(l.id)
           ? { ...l, email_status: "smartlead_sent", email_status_updated_at: now }
-          : l
-      )
+          : l,
+      ),
     );
     try {
       await bulkUpdateEmailStatus(ids, "smartlead_sent");
@@ -471,14 +534,14 @@ export default function LeadsTable({
 
   async function bulkSetLeadStatus(status: LeadStatus) {
     const ids = Array.from(selected);
-    const previous = leads;
+    const previous = leadsRef.current;
     const now = new Date().toISOString();
     setLeads((curr) =>
       curr.map((l) =>
         selected.has(l.id)
           ? { ...l, lead_status: status, lead_status_updated_at: now }
-          : l
-      )
+          : l,
+      ),
     );
     try {
       await bulkUpdateLeadStatus(ids, status);
@@ -489,84 +552,107 @@ export default function LeadsTable({
   }
 
   return (
-    <div className="space-y-4">
-      <BulkActionBar
-        selectedCount={selected.size}
-        profiles={profiles}
-        onClear={() => setSelected(new Set())}
-        onAssignOwner={bulkAssignOwner}
-        onMarkSmartleadSent={bulkMarkSmartleadSent}
-        onSetLeadStatus={bulkSetLeadStatus}
-      />
+    <SelectionContext.Provider value={selectionCtx}>
+      <div className="space-y-4">
+        <BulkActionBar
+          selectedCount={selected.size}
+          profiles={profiles}
+          onClear={() => setSelected(new Set())}
+          onAssignOwner={bulkAssignOwner}
+          onMarkSmartleadSent={bulkMarkSmartleadSent}
+          onSetLeadStatus={bulkSetLeadStatus}
+        />
 
-      <FilterBar
-        profiles={profiles}
-        currentUserId={currentUserId}
-        resultCount={filtered.length}
-        totalCount={leads.length}
-      />
+        <FilterBar
+          profiles={profiles}
+          currentUserId={currentUserId}
+          resultCount={filtered.length}
+          totalCount={leads.length}
+        />
 
-      <div className="rounded-md border overflow-x-auto">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((hg) => (
-              <TableRow key={hg.id}>
-                {hg.headers.map((header) => {
-                  const canSort = header.column.getCanSort();
-                  return (
-                    <TableHead
-                      key={header.id}
-                      className={canSort ? "cursor-pointer select-none" : undefined}
-                      onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                        {{ asc: "▲", desc: "▼" }[header.column.getIsSorted() as string] ?? null}
-                      </span>
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  No leads match your filters.
-                </TableCell>
-              </TableRow>
-            ) : (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  className="cursor-pointer hover:bg-accent/40"
-                  onClick={() => setOpenLeadId(row.original.id)}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="whitespace-nowrap">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
+        <div
+          ref={scrollRef}
+          className="rounded-md border border-[var(--border-subtle)] overflow-auto"
+          style={{ maxHeight: "calc(100vh - 260px)" }}
+        >
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-[var(--bg-elevated)]">
+              {table.getHeaderGroups().map((hg) => (
+                <TableRow key={hg.id}>
+                  {hg.headers.map((header) => {
+                    const canSort = header.column.getCanSort();
+                    return (
+                      <TableHead
+                        key={header.id}
+                        className={canSort ? "cursor-pointer select-none" : undefined}
+                        onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {{ asc: "▲", desc: "▼" }[header.column.getIsSorted() as string] ?? null}
+                        </span>
+                      </TableHead>
+                    );
+                  })}
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {rows.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={columns.length}
+                    className="h-24 text-center text-muted-foreground"
+                  >
+                    No leads match your filters.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                <>
+                  {paddingTop > 0 && (
+                    <tr style={{ height: `${paddingTop}px` }} aria-hidden>
+                      <td colSpan={columns.length} />
+                    </tr>
+                  )}
+                  {virtualItems.map((virtualRow) => {
+                    const row = rows[virtualRow.index];
+                    return (
+                      <TableRow
+                        key={row.id}
+                        data-index={virtualRow.index}
+                        ref={rowVirtualizer.measureElement}
+                        className="cursor-pointer hover:bg-[var(--bg-overlay)]"
+                        onClick={() => setOpenLeadId(row.original.id)}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id} className="whitespace-nowrap">
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    );
+                  })}
+                  {paddingBottom > 0 && (
+                    <tr style={{ height: `${paddingBottom}px` }} aria-hidden>
+                      <td colSpan={columns.length} />
+                    </tr>
+                  )}
+                </>
+              )}
+            </TableBody>
+          </Table>
+        </div>
 
-      <LeadDetailDrawer
-        leadId={openLeadId}
-        onClose={() => setOpenLeadId(null)}
-        onNotesSaved={(id, newNotes) =>
-          setLeads((curr) =>
-            curr.map((l) => (l.id === id ? { ...l, notes: newNotes } : l))
-          )
-        }
-      />
-    </div>
+        <LeadDetailDrawer
+          leadId={openLeadId}
+          onClose={() => setOpenLeadId(null)}
+          onNotesSaved={(id, newNotes) =>
+            setLeads((curr) =>
+              curr.map((l) => (l.id === id ? { ...l, notes: newNotes } : l)),
+            )
+          }
+        />
+      </div>
+    </SelectionContext.Provider>
   );
 }
