@@ -33,6 +33,7 @@ import StatusCell from "@/components/leads/StatusCell";
 import OwnerCell from "@/components/leads/OwnerCell";
 import QualifiedCell from "@/components/leads/QualifiedCell";
 import BulkActionBar from "@/components/leads/BulkActionBar";
+import DistributeDialog from "@/components/leads/DistributeDialog";
 import LeadDetailDrawer from "@/components/leads/LeadDetailDrawer";
 import FilterBar, { filtersFromSearchParams } from "@/components/leads/FilterBar";
 import { labelFor } from "@/lib/apollo-mapping";
@@ -563,12 +564,31 @@ export default function LeadsTable({
           onSetLeadStatus={bulkSetLeadStatus}
         />
 
-        <FilterBar
-          profiles={profiles}
-          currentUserId={currentUserId}
-          resultCount={filtered.length}
-          totalCount={leads.length}
-        />
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <FilterBar
+            profiles={profiles}
+            currentUserId={currentUserId}
+            resultCount={filtered.length}
+            totalCount={leads.length}
+          />
+          <DistributeDialog
+            allLeads={leads}
+            filteredLeads={filtered}
+            profiles={profiles}
+            onApplied={(assignments) => {
+              // Build an id → ownerId map for one-pass patch
+              const patch = new Map<string, string>();
+              for (const { ownerId, leadIds } of assignments) {
+                for (const id of leadIds) patch.set(id, ownerId);
+              }
+              setLeads((curr) =>
+                curr.map((l) =>
+                  patch.has(l.id) ? { ...l, owner_id: patch.get(l.id)! } : l,
+                ),
+              );
+            }}
+          />
+        </div>
 
         <div
           ref={scrollRef}

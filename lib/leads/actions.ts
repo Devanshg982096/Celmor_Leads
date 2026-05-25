@@ -154,6 +154,50 @@ export async function bulkUpdateLeadOwner(leadIds: string[], ownerId: string | n
   revalidatePath("/", "layout");
 }
 
+/**
+ * Distribute leads across multiple owners in a single transaction-ish batch.
+ * `assignments` is a map of owner_id (or "unassigned") → leadIds[]. We run one
+ * update query per group so each group can have a different owner_id.
+ */
+export async function distributeLeads(
+  assignments: { ownerId: string | null; leadIds: string[] }[],
+) {
+  const { supabase, userId } = await getActorOrThrow();
+
+  // Pre-fetch owner labels for activity log
+  const ownerIds = assignments
+    .map((a) => a.ownerId)
+    .filter((id): id is string => !!id);
+  const labels: Record<string, string> = {};
+  if (ownerIds.length > 0) {
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, display_name")
+      .in("id", ownerIds);
+    for (const p of (data ?? []) as { id: string; display_name: string }[]) {
+      labels[p.id] = p.display_name;
+    }
+  }
+
+  for (const { ownerId, leadIds } of assignments) {
+    if (leadIds.length === 0) continue;
+    const label = ownerId ? labels[ownerId] ?? "Unknown" : "Unassigned";
+    const { error } = await supabase
+      .from("leads")
+      .update({ owner_id: ownerId })
+      .in("id", leadIds);
+    if (error) throw new Error(error.message);
+    await logBulkActivity(
+      supabase,
+      leadIds,
+      userId,
+      `Distributed to ${label}`,
+    );
+  }
+
+  revalidatePath("/", "layout");
+}
+
 export async function bulkUpdateEmailStatus(leadIds: string[], status: EmailStatus) {
   if (leadIds.length === 0) return;
   const { supabase, userId } = await getActorOrThrow();
