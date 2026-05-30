@@ -11,7 +11,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { updateWorkspaceSetting } from "@/lib/settings/workspace-actions";
+import {
+  testWorkspaceKey,
+  updateWorkspaceSetting,
+} from "@/lib/settings/workspace-actions";
 
 interface Props {
   smartleadKeyPresent: boolean;
@@ -88,6 +91,16 @@ function SecretField({ field, isSet }: { field: FieldDef; isSet: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [okFlash, setOkFlash] = useState(false);
   const [isSaving, startTransition] = useTransition();
+  const [testResult, setTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [isTesting, startTestTransition] = useTransition();
+
+  function runTest() {
+    setTestResult(null);
+    startTestTransition(async () => {
+      const result = await testWorkspaceKey(field.key);
+      setTestResult(result);
+    });
+  }
 
   function save() {
     setError(null);
@@ -172,6 +185,14 @@ function SecretField({ field, isSet }: { field: FieldDef; isSet: boolean }) {
           </>
         ) : (
           <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={runTest}
+              disabled={isTesting}
+            >
+              {isTesting ? "Testing…" : "Test"}
+            </Button>
             <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
               Replace
             </Button>
@@ -191,6 +212,19 @@ function SecretField({ field, isSet }: { field: FieldDef; isSet: boolean }) {
       </div>
       <p className="text-xs text-[var(--text-secondary)]">{field.hint}</p>
       {error && <p className="text-xs text-[var(--status-danger)]">{error}</p>}
+      {testResult && (
+        <p
+          className={
+            "text-xs " +
+            (testResult.ok
+              ? "text-[var(--status-success)]"
+              : "text-[var(--status-danger)]")
+          }
+        >
+          {testResult.ok ? "✓ " : "✗ "}
+          {testResult.detail}
+        </p>
+      )}
     </div>
   );
 }
