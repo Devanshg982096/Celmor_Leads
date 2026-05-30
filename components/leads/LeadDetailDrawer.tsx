@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Mail, Phone, ExternalLink, X } from "lucide-react";
+import { Mail, Phone, ExternalLink, X, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,7 @@ import {
   updateLeadNotes,
   type ActivityWithActor,
 } from "@/lib/leads/detail-actions";
+import { enrichLeadAction } from "@/lib/leads/enrichment-actions";
 import { getLeadValue } from "@/lib/leads-columns";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types";
@@ -51,6 +52,8 @@ export default function LeadDetailDrawer({
   const [savedNotes, setSavedNotes] = useState("");
   const [isSaving, startSaveTransition] = useTransition();
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [isEnriching, startEnrichTransition] = useTransition();
+  const [enrichError, setEnrichError] = useState<string | null>(null);
 
   // Load lead detail when leadId changes
   useEffect(() => {
@@ -116,6 +119,45 @@ export default function LeadDetailDrawer({
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : "Failed to save notes.");
       }
+    });
+  }
+
+  function handleEnrich() {
+    if (!leadId || !lead) return;
+    setEnrichError(null);
+    startEnrichTransition(async () => {
+      const result = await enrichLeadAction(leadId);
+      if (!result.ok) {
+        setEnrichError(result.error);
+        setLead((prev) =>
+          prev ? { ...prev, enrichment_status: "failed", enrichment_error: result.error } : prev,
+        );
+        return;
+      }
+      const now = new Date().toISOString();
+      setLead((prev) =>
+        prev
+          ? {
+              ...prev,
+              subject_line: result.subject,
+              icebreaker: result.icebreaker,
+              enrichment_status: "done",
+              enriched_at: now,
+              enrichment_error: null,
+            }
+          : prev,
+      );
+      setActivity((prev) => [
+        {
+          id: `local-${Date.now()}`,
+          lead_id: leadId,
+          user_id: "local",
+          action: "Enriched (icebreaker generated)",
+          created_at: now,
+          actor_name: "You",
+        },
+        ...prev,
+      ]);
     });
   }
 
@@ -264,6 +306,67 @@ export default function LeadDetailDrawer({
                   {employees && <KvRow label="Employees" value={employees} />}
                   {city && <KvRow label="City" value={city} />}
                 </dl>
+              </section>
+
+              {/* Icebreaker / Enrichment */}
+              <section>
+                <div className="mb-2 flex items-center justify-between">
+                  <SectionHeading className="mb-0">Icebreaker</SectionHeading>
+                  <Button
+                    size="sm"
+                    variant={lead.icebreaker ? "ghost" : "default"}
+                    onClick={handleEnrich}
+                    disabled={isEnriching}
+                  >
+                    <Sparkles className="size-3.5" />
+                    {isEnriching
+                      ? "Enriching…"
+                      : lead.icebreaker
+                        ? "Regenerate"
+                        : "Enrich & write icebreaker"}
+                  </Button>
+                </div>
+                {lead.icebreaker ? (
+                  <div className="space-y-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-3 py-2.5 text-[13px]">
+                    {lead.subject_line && (
+                      <div>
+                        <p className="text-[10.5px] uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+                          Subject
+                        </p>
+                        <p className="mt-0.5 text-[var(--text-primary)]">
+                          {lead.subject_line}
+                        </p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-[10.5px] uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+                        Opener
+                      </p>
+                      <p className="mt-0.5 whitespace-pre-wrap text-[var(--text-primary)]">
+                        {lead.icebreaker}
+                      </p>
+                    </div>
+                    {lead.enriched_at && (
+                      <p
+                        className="font-mono text-[11px] text-[var(--text-tertiary)]"
+                        style={{ fontVariantNumeric: "tabular-nums" }}
+                      >
+                        Generated {relativeTime(lead.enriched_at)}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-[13px] text-[var(--text-tertiary)]">
+                    {lead.enrichment_status === "failed"
+                      ? `Last attempt failed: ${lead.enrichment_error ?? "unknown error"}`
+                      : "No icebreaker generated yet."}
+                  </p>
+                )}
+                {enrichError && (
+                  <p className="mt-2 text-[12px] text-[var(--status-danger)]">
+                    {enrichError}
+                  </p>
+                )}
               </section>
 
               {/* Notes */}
