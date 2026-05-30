@@ -183,6 +183,58 @@ interface AddLeadsBody {
   };
 }
 
+export async function createCampaign(
+  apiKey: string,
+  name: string,
+): Promise<SmartleadCampaign> {
+  // Smartlead expects POST /campaigns/create with body { name, client_id }.
+  // client_id is optional and we leave it null so the campaign lives under
+  // the workspace itself.
+  const result = await request<Record<string, unknown>>(apiKey, "/campaigns/create", {
+    method: "POST",
+    body: JSON.stringify({ name, client_id: null }),
+  });
+  const id = Number(result.id ?? (result as { campaign_id?: number }).campaign_id);
+  if (!Number.isFinite(id)) {
+    throw new Error(`Smartlead createCampaign returned no id: ${JSON.stringify(result).slice(0, 240)}`);
+  }
+  return {
+    id,
+    name: typeof result.name === "string" ? (result.name as string) : name,
+    status: typeof result.status === "string" ? (result.status as string) : "DRAFTED",
+  };
+}
+
+export interface SequenceStepInput {
+  seq_number: number;
+  subject: string;
+  email_body: string;
+  delay_in_days: number;
+}
+
+/**
+ * Save (replace) the full sequence for a campaign. Smartlead's endpoint
+ * accepts the array under `sequences`. Wait days live inside
+ * `seq_delay_details.delay_in_days`.
+ */
+export async function saveSequence(
+  apiKey: string,
+  campaignId: number,
+  steps: SequenceStepInput[],
+): Promise<void> {
+  await request(apiKey, `/campaigns/${campaignId}/sequences`, {
+    method: "POST",
+    body: JSON.stringify({
+      sequences: steps.map((s) => ({
+        seq_number: s.seq_number,
+        subject: s.subject,
+        email_body: s.email_body,
+        seq_delay_details: { delay_in_days: s.delay_in_days },
+      })),
+    }),
+  });
+}
+
 export async function addLeadsToCampaign(
   apiKey: string,
   campaignId: number,

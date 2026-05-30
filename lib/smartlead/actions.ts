@@ -4,10 +4,13 @@ import { createClient } from "@/lib/supabase/server";
 import type { Lead, WorkspaceSettings } from "@/lib/types";
 import {
   addLeadsToCampaign,
+  createCampaign,
   getAnalytics,
   getSequence,
   listCampaigns,
+  saveSequence,
   type AddLeadsResult,
+  type SequenceStepInput,
   type SmartleadAnalytics,
   type SmartleadCampaign,
   type SmartleadLead,
@@ -34,6 +37,49 @@ export async function listCampaignsAction(): Promise<
   try {
     const campaigns = await listCampaigns(apiKey);
     return { ok: true, campaigns };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function createCampaignAction(
+  name: string,
+): Promise<
+  | { ok: true; campaign: SmartleadCampaign }
+  | { ok: false; error: string }
+> {
+  const trimmed = name.trim();
+  if (trimmed.length === 0) return { ok: false, error: "Campaign name is required." };
+  const apiKey = await getApiKey();
+  if (!apiKey) return { ok: false, error: "Smartlead API key not set in Settings." };
+  try {
+    const campaign = await createCampaign(apiKey, trimmed);
+    return { ok: true, campaign };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function saveSequenceAction(
+  campaignId: number,
+  steps: SequenceStepInput[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (steps.length === 0) {
+    return { ok: false, error: "Sequence must have at least one step." };
+  }
+  for (const [i, s] of steps.entries()) {
+    if (!s.subject.trim() && i === 0) {
+      return { ok: false, error: "Step 1 subject is required." };
+    }
+    if (!s.email_body.trim()) {
+      return { ok: false, error: `Step ${i + 1} body is empty.` };
+    }
+  }
+  const apiKey = await getApiKey();
+  if (!apiKey) return { ok: false, error: "Smartlead API key not set in Settings." };
+  try {
+    await saveSequence(apiKey, campaignId, steps);
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

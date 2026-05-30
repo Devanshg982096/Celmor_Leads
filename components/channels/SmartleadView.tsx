@@ -12,6 +12,8 @@ import type {
   SmartleadCampaign,
   SmartleadSequenceStep,
 } from "@/lib/smartlead/client";
+import CreateCampaignDialog from "@/components/channels/CreateCampaignDialog";
+import SequenceEditor from "@/components/channels/SequenceEditor";
 
 interface Props {
   initialCampaigns: SmartleadCampaign[] | null;
@@ -29,6 +31,8 @@ export default function SmartleadView({ initialCampaigns, initialError }: Props)
   const [detailError, setDetailError] = useState<string | null>(null);
   const [isLoadingDetail, startDetailTransition] = useTransition();
   const [isRefreshing, startRefreshTransition] = useTransition();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   // Load detail for the currently selected campaign
   useEffect(() => {
@@ -41,6 +45,7 @@ export default function SmartleadView({ initialCampaigns, initialError }: Props)
     setDetailError(null);
     setSequence([]);
     setAnalytics(null);
+    setEditing(false);
     startDetailTransition(async () => {
       const result = await getCampaignDetailAction(selectedId);
       if (!result.ok) {
@@ -67,6 +72,14 @@ export default function SmartleadView({ initialCampaigns, initialError }: Props)
     });
   }
 
+  function handleCreated(campaign: SmartleadCampaign) {
+    setCampaigns((prev) => (prev ? [campaign, ...prev] : [campaign]));
+    setSelectedId(campaign.id);
+    setSequence([]);
+    setAnalytics(null);
+    setEditing(true); // jump straight into editing the new campaign's sequence
+  }
+
   if (error) {
     return (
       <div className="rounded-md border border-[var(--status-danger)] bg-[var(--bg-overlay)] p-6">
@@ -91,24 +104,26 @@ export default function SmartleadView({ initialCampaigns, initialError }: Props)
 
   if (!campaigns || campaigns.length === 0) {
     return (
-      <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-8 text-center">
-        <p className="text-sm text-[var(--text-secondary)]">
-          No campaigns found in Smartlead yet.
-        </p>
-        <div className="mt-3 flex justify-center gap-2">
-          <Button size="sm" variant="outline" onClick={refresh} disabled={isRefreshing}>
-            {isRefreshing ? "Refreshing…" : "Refresh"}
-          </Button>
-          <a
-            href="https://app.smartlead.ai/app/email-campaign/all"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex h-8 items-center rounded-md border border-[var(--border-default)] bg-transparent px-3 text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-overlay)]"
-          >
-            Open Smartlead ↗
-          </a>
+      <>
+        <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-8 text-center">
+          <p className="text-sm text-[var(--text-secondary)]">
+            No campaigns found in Smartlead yet.
+          </p>
+          <div className="mt-3 flex justify-center gap-2">
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              + New campaign
+            </Button>
+            <Button size="sm" variant="outline" onClick={refresh} disabled={isRefreshing}>
+              {isRefreshing ? "Refreshing…" : "Refresh"}
+            </Button>
+          </div>
         </div>
-      </div>
+        <CreateCampaignDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          onCreated={handleCreated}
+        />
+      </>
     );
   }
 
@@ -120,14 +135,23 @@ export default function SmartleadView({ initialCampaigns, initialError }: Props)
           <h3 className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
             Campaigns
           </h3>
-          <button
-            type="button"
-            onClick={refresh}
-            disabled={isRefreshing}
-            className="text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-          >
-            {isRefreshing ? "…" : "Refresh"}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="text-[11px] text-[var(--accent-soft)] hover:text-[var(--accent-hover)]"
+            >
+              + New
+            </button>
+            <button
+              type="button"
+              onClick={refresh}
+              disabled={isRefreshing}
+              className="text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+            >
+              {isRefreshing ? "…" : "Refresh"}
+            </button>
+          </div>
         </div>
         <ul className="space-y-1">
           {campaigns.map((c) => {
@@ -170,13 +194,34 @@ export default function SmartleadView({ initialCampaigns, initialError }: Props)
           <p className="text-[13px] text-[var(--text-tertiary)]">Loading campaign…</p>
         ) : detailError ? (
           <p className="text-[13px] text-[var(--status-danger)]">{detailError}</p>
+        ) : editing ? (
+          <SequenceEditor
+            campaignId={selectedId}
+            initial={sequence}
+            onClose={() => setEditing(false)}
+            onSaved={(steps) => {
+              setSequence(steps);
+              setEditing(false);
+            }}
+          />
         ) : (
           <div className="space-y-5">
+            <div className="flex items-center justify-end">
+              <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                {sequence.length === 0 ? "Add sequence" : "Edit sequence"}
+              </Button>
+            </div>
             <Analytics a={analytics} />
             <Sequence steps={sequence} />
           </div>
         )}
       </main>
+
+      <CreateCampaignDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={handleCreated}
+      />
     </div>
   );
 }
@@ -256,9 +301,6 @@ function Sequence({ steps }: { steps: SmartleadSequenceStep[] }) {
           ))}
         </ol>
       )}
-      <p className="mt-3 text-[11px] text-[var(--text-tertiary)]">
-        Read-only for now. Editing sequences lands in the next phase.
-      </p>
     </section>
   );
 }
