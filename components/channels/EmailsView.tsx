@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import ChipRow from "@/components/channels/ChipRow";
 import StatusCell from "@/components/leads/StatusCell";
 import OwnerCell from "@/components/leads/OwnerCell";
@@ -46,6 +47,33 @@ interface Props {
 
 function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] ?? "";
+}
+
+function IcebreakerBadge({ lead }: { lead: Lead }) {
+  // Build a hover tooltip with the subject + opener preview when we have one.
+  const tooltip =
+    lead.subject_line || lead.icebreaker
+      ? [lead.subject_line, lead.icebreaker].filter(Boolean).join(" — ")
+      : undefined;
+
+  if (lead.enrichment_status === "enriching") {
+    return <Badge variant="outline" title="Apify + Claude in progress">Enriching…</Badge>;
+  }
+  if (lead.icebreaker) {
+    return (
+      <Badge variant="default" title={tooltip}>
+        Done
+      </Badge>
+    );
+  }
+  if (lead.enrichment_status === "failed") {
+    return (
+      <Badge variant="destructive" title={lead.enrichment_error ?? "Failed"}>
+        Failed
+      </Badge>
+    );
+  }
+  return <Badge variant="outline" className="text-[var(--text-tertiary)]">—</Badge>;
 }
 
 export default function EmailsView({ leads: initialLeads, profiles }: Props) {
@@ -262,6 +290,7 @@ export default function EmailsView({ leads: initialLeads, profiles }: Props) {
               <TableHead>Company</TableHead>
               <TableHead>Website</TableHead>
               <TableHead>Email</TableHead>
+              <TableHead>Icebreaker</TableHead>
               <TableHead>Email Status</TableHead>
               <TableHead>Qualified</TableHead>
               <TableHead>Owner</TableHead>
@@ -270,7 +299,7 @@ export default function EmailsView({ leads: initialLeads, profiles }: Props) {
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                   No qualified leads with an email address.
                 </TableCell>
               </TableRow>
@@ -321,6 +350,9 @@ export default function EmailsView({ leads: initialLeads, profiles }: Props) {
                       >
                         {lead.email}
                       </a>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <IcebreakerBadge lead={lead} />
                     </TableCell>
                     <TableCell>
                       <StatusCell<EmailStatus>

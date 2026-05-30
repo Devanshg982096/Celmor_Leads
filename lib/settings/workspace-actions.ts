@@ -24,6 +24,24 @@ type UpdatableKey =
   | "apify_token"
   | "icebreaker_prompt";
 
+export async function setCronEnabled(
+  enabled: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not authenticated." };
+
+  const { error } = await supabase
+    .from("workspace_settings")
+    .update({ cron_enabled: enabled, updated_at: new Date().toISOString() })
+    .eq("id", 1);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
 export async function updateWorkspaceSetting(
   key: UpdatableKey,
   value: string,

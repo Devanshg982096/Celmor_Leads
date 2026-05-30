@@ -33,6 +33,19 @@ export async function POST(req: Request) {
 
   const supabase = createAdminClient();
   const startedAt = Date.now();
+
+  // Workspace-level kill switch. The cron stays scheduled on Netlify but
+  // does no work when disabled — flip the toggle in Settings to resume.
+  const { data: settings } = await supabase
+    .from("workspace_settings")
+    .select("cron_enabled")
+    .eq("id", 1)
+    .maybeSingle();
+  const cronEnabled = (settings as { cron_enabled?: boolean } | null)?.cron_enabled ?? true;
+  if (!cronEnabled) {
+    return NextResponse.json({ ok: true, paused: true, elapsed_ms: Date.now() - startedAt });
+  }
+
   const summary = {
     finalized: 0,
     stillRunning: 0,

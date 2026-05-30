@@ -82,6 +82,7 @@ export interface WorkspaceSettingsRow {
   anthropic_api_key: string | null;
   apify_token: string | null;
   icebreaker_prompt: string;
+  cron_enabled: boolean;
   updated_at: string;
 }
 

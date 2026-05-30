@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  FlaskConical,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -46,6 +47,7 @@ export default function Sidebar({ avatars, user }: Props) {
     return match[1];
   })();
   const settingsActive = pathname.startsWith("/settings");
+  const promptLabActive = pathname.startsWith("/prompt-lab");
 
   return (
     <aside
@@ -167,6 +169,21 @@ export default function Sidebar({ avatars, user }: Props) {
 
       {/* Footer: settings + user */}
       <div className="border-t border-[var(--border-subtle)] px-2 py-3">
+        <Link
+          href="/prompt-lab"
+          title={collapsed ? "Prompt lab" : undefined}
+          className={cn(
+            "flex items-center gap-2 rounded-sm py-1.5 text-sm transition-colors",
+            collapsed ? "justify-center px-0" : "px-2",
+            promptLabActive
+              ? "bg-[var(--bg-overlay)] text-[var(--text-primary)]"
+              : "text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)] hover:text-[var(--text-primary)]",
+          )}
+        >
+          <FlaskConical className="size-4 shrink-0" />
+          {!collapsed && <span>Prompt lab</span>}
+        </Link>
+
         <Link
           href="/settings"
           title={collapsed ? "Settings" : undefined}

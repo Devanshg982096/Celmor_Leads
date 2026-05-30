@@ -4,6 +4,7 @@ import AppearanceSection from "@/components/settings/AppearanceSection";
 import WorkspaceSection from "@/components/settings/WorkspaceSection";
 import IntegrationsSection from "@/components/settings/IntegrationsSection";
 import IcebreakerPromptSection from "@/components/settings/IcebreakerPromptSection";
+import AutomationSection from "@/components/settings/AutomationSection";
 import SignOutSection from "@/components/settings/SignOutSection";
 import { createClient } from "@/lib/supabase/server";
 import { listProfiles } from "@/lib/avatars/leads-actions";
@@ -50,6 +51,7 @@ export default async function SettingsPage() {
           apifyTokenPresent={!!ws?.apify_token}
         />
         <IcebreakerPromptSection initialPrompt={ws?.icebreaker_prompt ?? ""} />
+        <AutomationSection initialEnabled={ws?.cron_enabled ?? true} />
         <SignOutSection />
       </div>
     </AppShell>

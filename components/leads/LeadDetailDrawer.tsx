@@ -420,6 +420,30 @@ export default function LeadDetailDrawer({
                 )}
               </section>
 
+              {/* Scraped sources — what the LLM saw */}
+              {(lead.website_summary || lead.linkedin_summary) && (
+                <section>
+                  <SectionHeading>Scraped sources</SectionHeading>
+                  <div className="space-y-2">
+                    {lead.website_summary && (
+                      <CollapsibleSource
+                        label="Website"
+                        text={lead.website_summary}
+                      />
+                    )}
+                    {lead.linkedin_summary && (
+                      <CollapsibleSource
+                        label="LinkedIn"
+                        text={lead.linkedin_summary}
+                      />
+                    )}
+                  </div>
+                  <p className="mt-2 text-[11px] text-[var(--text-tertiary)]">
+                    Stored after enrichment — reused for future LinkedIn message generation.
+                  </p>
+                </section>
+              )}
+
               {/* Notes */}
               <section>
                 <div className="mb-2 flex items-center justify-between">
@@ -527,6 +551,36 @@ function SectionHeading({
     >
       {children}
     </h3>
+  );
+}
+
+function CollapsibleSource({ label, text }: { label: string; text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[13px] text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+      >
+        <span className="flex items-center gap-2">
+          <span aria-hidden className="text-[10px] text-[var(--text-tertiary)]">
+            {open ? "▾" : "▸"}
+          </span>
+          <span className="font-medium">{label}</span>
+          <span className="text-[11px] text-[var(--text-tertiary)]">
+            {text.length.toLocaleString()} chars
+          </span>
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-[var(--border-subtle)] px-3 py-2">
+          <pre className="whitespace-pre-wrap break-words font-mono text-[12px] text-[var(--text-secondary)]">
+            {text}
+          </pre>
+        </div>
+      )}
+    </div>
   );
 }
 
