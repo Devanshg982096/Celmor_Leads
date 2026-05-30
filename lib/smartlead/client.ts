@@ -183,6 +183,89 @@ interface AddLeadsBody {
   };
 }
 
+export interface SmartleadCampaignLead {
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  reply_count?: number;
+  bounce_count?: number;
+  open_count?: number;
+  click_count?: number;
+  sent_count?: number;
+  unsubscribed?: boolean;
+  is_unsubscribed?: boolean;
+  status?: string;
+}
+
+/**
+ * Page through every lead Smartlead knows about for this campaign and
+ * return their status counters. Used by the sync cron to flip Narada's
+ * email_status when a lead replies or bounces inside Smartlead.
+ *
+ * Smartlead's leads endpoint paginates with offset/limit. We cap at
+ * 2000 leads per campaign per sync — well above realistic campaign size
+ * and keeps the sync tick bounded.
+ */
+export async function listCampaignLeads(
+  apiKey: string,
+  campaignId: number,
+): Promise<SmartleadCampaignLead[]> {
+  const HARD_CAP = 2000;
+  const PAGE = 100;
+  const all: SmartleadCampaignLead[] = [];
+  let offset = 0;
+  while (all.length < HARD_CAP) {
+    const page = await request<unknown>(
+      apiKey,
+      `/campaigns/${campaignId}/leads`,
+      { query: { offset, limit: PAGE } },
+    );
+    const items = extractLeadArray(page);
+    if (items.length === 0) break;
+    for (const it of items) {
+      const lead = normaliseCampaignLead(it);
+      if (lead) all.push(lead);
+    }
+    if (items.length < PAGE) break;
+    offset += PAGE;
+  }
+  return all;
+}
+
+function extractLeadArray(payload: unknown): Record<string, unknown>[] {
+  if (Array.isArray(payload)) return payload as Record<string, unknown>[];
+  if (payload && typeof payload === "object") {
+    const obj = payload as Record<string, unknown>;
+    if (Array.isArray(obj.data)) return obj.data as Record<string, unknown>[];
+    if (Array.isArray(obj.leads)) return obj.leads as Record<string, unknown>[];
+  }
+  return [];
+}
+
+function normaliseCampaignLead(raw: Record<string, unknown>): SmartleadCampaignLead | null {
+  // Smartlead nests lead fields a couple of ways; merge them.
+  const lead = (raw.lead ?? raw) as Record<string, unknown>;
+  const email = (lead.email ?? raw.email) as string | undefined;
+  if (typeof email !== "string" || email.length === 0) return null;
+  const num = (key: string): number | undefined => {
+    const v = raw[key] ?? lead[key];
+    return typeof v === "number" ? v : undefined;
+  };
+  return {
+    email: email.toLowerCase(),
+    first_name: typeof lead.first_name === "string" ? lead.first_name : undefined,
+    last_name: typeof lead.last_name === "string" ? lead.last_name : undefined,
+    reply_count: num("reply_count") ?? num("total_reply_count"),
+    bounce_count: num("bounce_count") ?? num("total_bounce_count"),
+    open_count: num("open_count") ?? num("total_open_count"),
+    click_count: num("click_count") ?? num("total_click_count"),
+    sent_count: num("sent_count") ?? num("total_sent_count"),
+    unsubscribed: typeof lead.is_unsubscribed === "boolean" ? lead.is_unsubscribed : undefined,
+    is_unsubscribed: typeof lead.is_unsubscribed === "boolean" ? lead.is_unsubscribed : undefined,
+    status: typeof raw.status === "string" ? (raw.status as string) : undefined,
+  };
+}
+
 export async function createCampaign(
   apiKey: string,
   name: string,

@@ -34,7 +34,9 @@ export async function proxy(request: NextRequest) {
   // API endpoints that authenticate themselves (e.g. cron with bearer token)
   // must bypass the user-session redirect — otherwise unauthenticated requests
   // get a 307 to /login and the handler never runs.
-  const isPublicApi = pathname.startsWith("/api/enrich/tick");
+  const isPublicApi =
+    pathname.startsWith("/api/enrich/tick") ||
+    pathname.startsWith("/api/smartlead/sync");
 
   if (!user && !isAuthRoute && !isPublicApi) {
     const url = request.nextUrl.clone();
