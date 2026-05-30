@@ -3,9 +3,11 @@ import ProfileSection from "@/components/settings/ProfileSection";
 import AppearanceSection from "@/components/settings/AppearanceSection";
 import WorkspaceSection from "@/components/settings/WorkspaceSection";
 import IntegrationsSection from "@/components/settings/IntegrationsSection";
+import IcebreakerPromptSection from "@/components/settings/IcebreakerPromptSection";
 import SignOutSection from "@/components/settings/SignOutSection";
 import { createClient } from "@/lib/supabase/server";
 import { listProfiles } from "@/lib/avatars/leads-actions";
+import { getWorkspaceSettings } from "@/lib/settings/workspace-actions";
 import type { Profile } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +19,10 @@ export default async function SettingsPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const profiles = await listProfiles();
+  const [profiles, ws] = await Promise.all([
+    listProfiles(),
+    getWorkspaceSettings(),
+  ]);
   const myProfile: Profile | null =
     user ? profiles.find((p) => p.id === user.id) ?? null : null;
 
@@ -39,7 +44,12 @@ export default async function SettingsPage() {
         <ProfileSection displayName={displayName} email={email} />
         <AppearanceSection />
         <WorkspaceSection members={profiles} currentUserId={user?.id ?? ""} />
-        <IntegrationsSection />
+        <IntegrationsSection
+          smartleadKeyPresent={!!ws?.smartlead_api_key}
+          anthropicKeyPresent={!!ws?.anthropic_api_key}
+          apifyTokenPresent={!!ws?.apify_token}
+        />
+        <IcebreakerPromptSection initialPrompt={ws?.icebreaker_prompt ?? ""} />
         <SignOutSection />
       </div>
     </AppShell>

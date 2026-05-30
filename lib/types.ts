@@ -17,6 +17,7 @@ export type UnqualifiedReason =
   | "not_decision_maker"
   | "cant_reach"
   | "other";
+export type EnrichmentStatus = "pending" | "enriching" | "done" | "failed";
 
 // ─── Row shapes (canonical) ───────────────────────────────────────────────
 export interface ProfileRow {
@@ -60,7 +61,25 @@ export interface LeadRow {
   unqualified_reason: UnqualifiedReason | null;
   unqualified_at: string | null;
   unqualified_by: string | null;
+  website_summary: string | null;
+  linkedin_summary: string | null;
+  subject_line: string | null;
+  icebreaker: string | null;
+  enriched_at: string | null;
+  enrichment_status: EnrichmentStatus | null;
+  enrichment_error: string | null;
+  smartlead_campaign_id: string | null;
+  smartlead_lead_id: string | null;
   created_at: string;
+}
+
+export interface WorkspaceSettingsRow {
+  id: number;
+  smartlead_api_key: string | null;
+  anthropic_api_key: string | null;
+  apify_token: string | null;
+  icebreaker_prompt: string;
+  updated_at: string;
 }
 
 export interface ActivityLogRow {
@@ -108,6 +127,12 @@ export interface Database {
         Update: Partial<ActivityLogRow>;
         Relationships: [];
       };
+      workspace_settings: {
+        Row: WorkspaceSettingsRow;
+        Insert: Insertable<WorkspaceSettingsRow, "id" | "updated_at" | "icebreaker_prompt">;
+        Update: Partial<WorkspaceSettingsRow>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -126,6 +151,7 @@ export type Profile = ProfileRow;
 export type Avatar = AvatarRow;
 export type Lead = LeadRow;
 export type ActivityLog = ActivityLogRow;
+export type WorkspaceSettings = WorkspaceSettingsRow;
 
 export interface AvatarWithStats extends AvatarRow {
   owner_split: { owner_id: string | null; display_name: string; count: number }[];
