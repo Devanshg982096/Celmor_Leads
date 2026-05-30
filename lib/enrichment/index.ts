@@ -64,22 +64,27 @@ export async function enrichLead(
     .eq("id", leadId);
 
   const websiteUrl = pickWebsite(lead);
-  const linkedinUrl = lead.linkedin_url;
+  const linkedinUrl = pickLinkedIn(lead);
 
   try {
-    const [websiteSummary, linkedinSummary] = await Promise.all([
-      scrapeWebsite(websiteUrl, ws.apify_token).catch((e) => {
-        console.error("[enrich] website crawl failed", leadId, e);
-        return null;
-      }),
-      scrapeLinkedIn(linkedinUrl, ws.apify_token).catch((e) => {
-        console.error("[enrich] linkedin scrape failed", leadId, e);
-        return null;
-      }),
+    const [websiteRes, linkedinRes] = await Promise.all([
+      runStep("website", websiteUrl, () =>
+        scrapeWebsite(websiteUrl, ws.apify_token!),
+      ),
+      runStep("linkedin", linkedinUrl, () =>
+        scrapeLinkedIn(linkedinUrl, ws.apify_token!),
+      ),
     ]);
 
+    const websiteSummary = websiteRes.summary;
+    const linkedinSummary = linkedinRes.summary;
+
     if (!websiteSummary && !linkedinSummary) {
-      return finalize(client, leadId, "No website or LinkedIn data available");
+      // Build a specific reason so the user knows *why* both failed.
+      const reasons: string[] = [];
+      reasons.push(`website: ${websiteRes.reason}`);
+      reasons.push(`linkedin: ${linkedinRes.reason}`);
+      return finalize(client, leadId, `Both sources empty — ${reasons.join("; ")}`);
     }
 
     const { subject, icebreaker } = await generateIcebreaker(
@@ -128,14 +133,66 @@ async function finalize(
   return { ok: false, error: errorMsg };
 }
 
+interface StepResult {
+  summary: string | null;
+  reason: string;
+}
+
+async function runStep(
+  label: string,
+  url: string | null,
+  fn: () => Promise<string | null>,
+): Promise<StepResult> {
+  if (!url) return { summary: null, reason: "no URL on lead" };
+  try {
+    const summary = await fn();
+    if (!summary) return { summary: null, reason: "scraper returned empty" };
+    return { summary, reason: "ok" };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[enrich] ${label} step failed`, msg);
+    // Truncate so a giant API error doesn't blow the DB column.
+    return { summary: null, reason: msg.slice(0, 240) };
+  }
+}
+
 /**
- * Resolve a usable website URL for a lead. Prefer the canonical `website`
- * key (mapped from Apollo's "Company Website Full"), then fall back to the
- * short variant. Both live in raw_data for non-canonical leads.
+ * Resolve a usable website URL for a lead. Tries every known key both as a
+ * canonical column and inside raw_data.
  */
 function pickWebsite(lead: Lead): string | null {
   const raw = lead.raw_data ?? {};
-  const candidates: unknown[] = [raw.website, raw.company_website_short];
+  const candidates: unknown[] = [
+    raw.website,
+    raw.company_website_short,
+    raw.company_website_full,
+    raw["Website"],
+    raw["Company Website Full"],
+    raw["Company Website Short"],
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim().length > 0) return c.trim();
+  }
+  return null;
+}
+
+/**
+ * Resolve a usable LinkedIn profile URL. Prefer the canonical column,
+ * then fall back to common raw_data keys.
+ */
+function pickLinkedIn(lead: Lead): string | null {
+  if (lead.linkedin_url && lead.linkedin_url.trim().length > 0) {
+    return lead.linkedin_url.trim();
+  }
+  const raw = lead.raw_data ?? {};
+  const candidates: unknown[] = [
+    raw.linkedin_url,
+    raw["Person Linkedin Url"],
+    raw["Person LinkedIn URL"],
+    raw["LinkedIn URL"],
+    raw["Linkedin URL"],
+    raw["LinkedIn Profile"],
+  ];
   for (const c of candidates) {
     if (typeof c === "string" && c.trim().length > 0) return c.trim();
   }
