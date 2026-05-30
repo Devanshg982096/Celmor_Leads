@@ -17,7 +17,7 @@ interface Props {
   profiles: Profile[];
   onClear: () => void;
   onAssignOwner: (ownerId: string | null) => Promise<void>;
-  onMarkSmartleadSent: () => Promise<void>;
+  onPushToSmartlead: () => void;
   onSetLeadStatus: (status: LeadStatus) => Promise<void>;
 }
 
@@ -30,7 +30,7 @@ export default function BulkActionBar({
   profiles,
   onClear,
   onAssignOwner,
-  onMarkSmartleadSent,
+  onPushToSmartlead,
   onSetLeadStatus,
 }: Props) {
   const [isPending, startTransition] = useTransition();
@@ -80,14 +80,14 @@ export default function BulkActionBar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Mark Smartlead Sent */}
+        {/* Push to Smartlead campaign */}
         <Button
           variant="secondary"
           size="sm"
           disabled={isPending}
-          onClick={() => run(onMarkSmartleadSent)}
+          onClick={onPushToSmartlead}
         >
-          Mark Smartlead Sent
+          Push to campaign…
         </Button>
 
         {/* Set Lead Status */}

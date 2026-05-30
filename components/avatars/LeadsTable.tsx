@@ -33,6 +33,7 @@ import StatusCell from "@/components/leads/StatusCell";
 import OwnerCell from "@/components/leads/OwnerCell";
 import QualifiedCell from "@/components/leads/QualifiedCell";
 import BulkActionBar from "@/components/leads/BulkActionBar";
+import PushToCampaignDialog from "@/components/leads/PushToCampaignDialog";
 import DistributeDialog from "@/components/leads/DistributeDialog";
 import LeadDetailDrawer from "@/components/leads/LeadDetailDrawer";
 import FilterBar, { filtersFromSearchParams } from "@/components/leads/FilterBar";
@@ -51,7 +52,6 @@ import {
 } from "@/lib/leads/labels";
 import { ALL } from "@/components/leads/FilterBar";
 import {
-  bulkUpdateEmailStatus,
   bulkUpdateLeadOwner,
   bulkUpdateLeadStatus,
   requalifyLead,
@@ -136,6 +136,7 @@ export default function LeadsTable({
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [pushDialogOpen, setPushDialogOpen] = useState(false);
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
 
   // ref mirror of leads so optimisticPatch can read the previous snapshot
@@ -514,23 +515,21 @@ export default function LeadsTable({
     }
   }
 
-  async function bulkMarkSmartleadSent() {
-    const ids = Array.from(selected);
-    const previous = leadsRef.current;
+  function handlePushedToCampaign(campaignId: number) {
+    const ids = new Set(selected);
     const now = new Date().toISOString();
     setLeads((curr) =>
       curr.map((l) =>
-        selected.has(l.id)
-          ? { ...l, email_status: "smartlead_sent", email_status_updated_at: now }
+        ids.has(l.id)
+          ? {
+              ...l,
+              email_status: "smartlead_sent",
+              email_status_updated_at: now,
+              smartlead_campaign_id: String(campaignId),
+            }
           : l,
       ),
     );
-    try {
-      await bulkUpdateEmailStatus(ids, "smartlead_sent");
-    } catch (err) {
-      setLeads(previous);
-      alert(err instanceof Error ? err.message : "Bulk update failed.");
-    }
   }
 
   async function bulkSetLeadStatus(status: LeadStatus) {
@@ -560,8 +559,15 @@ export default function LeadsTable({
           profiles={profiles}
           onClear={() => setSelected(new Set())}
           onAssignOwner={bulkAssignOwner}
-          onMarkSmartleadSent={bulkMarkSmartleadSent}
+          onPushToSmartlead={() => setPushDialogOpen(true)}
           onSetLeadStatus={bulkSetLeadStatus}
+        />
+
+        <PushToCampaignDialog
+          open={pushDialogOpen}
+          onOpenChange={setPushDialogOpen}
+          leadIds={Array.from(selected)}
+          onPushed={handlePushedToCampaign}
         />
 
         <div className="flex flex-wrap items-end justify-between gap-3">

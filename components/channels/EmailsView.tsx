@@ -16,13 +16,13 @@ import OwnerCell from "@/components/leads/OwnerCell";
 import QualifiedCell from "@/components/leads/QualifiedCell";
 import BulkActionBar from "@/components/leads/BulkActionBar";
 import LeadDetailDrawer from "@/components/leads/LeadDetailDrawer";
+import PushToCampaignDialog from "@/components/leads/PushToCampaignDialog";
 import KpiBar, { percent, type Kpi } from "@/components/channels/KpiBar";
 import {
   EMAIL_STATUS_BADGE,
   EMAIL_STATUS_OPTIONS,
 } from "@/lib/leads/labels";
 import {
-  bulkUpdateEmailStatus,
   bulkUpdateLeadOwner,
   bulkUpdateLeadStatus,
   requalifyLead,
@@ -53,6 +53,7 @@ export default function EmailsView({ leads: initialLeads, profiles }: Props) {
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<EmailStatus | "all">("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [pushDialogOpen, setPushDialogOpen] = useState(false);
 
   const optimisticPatch = useCallback(
     async (leadId: string, patch: Partial<Lead>, run: () => Promise<void>) => {
@@ -167,23 +168,22 @@ export default function EmailsView({ leads: initialLeads, profiles }: Props) {
     }
   }
 
-  async function bulkMarkSmartleadSent() {
-    const ids = Array.from(selected);
-    const previous = leads;
+  function handlePushedToCampaign(campaignId: number) {
+    // Reflect server-side updates locally so the table flips without a refresh.
+    const ids = new Set(selected);
     const now = new Date().toISOString();
     setLeads((curr) =>
       curr.map((l) =>
-        selected.has(l.id)
-          ? { ...l, email_status: "smartlead_sent", email_status_updated_at: now }
+        ids.has(l.id)
+          ? {
+              ...l,
+              email_status: "smartlead_sent",
+              email_status_updated_at: now,
+              smartlead_campaign_id: String(campaignId),
+            }
           : l,
       ),
     );
-    try {
-      await bulkUpdateEmailStatus(ids, "smartlead_sent");
-    } catch (err) {
-      setLeads(previous);
-      alert(err instanceof Error ? err.message : "Bulk update failed.");
-    }
   }
 
   async function bulkSetLeadStatus(status: LeadStatus) {
@@ -212,8 +212,15 @@ export default function EmailsView({ leads: initialLeads, profiles }: Props) {
         profiles={profiles}
         onClear={() => setSelected(new Set())}
         onAssignOwner={bulkAssignOwner}
-        onMarkSmartleadSent={bulkMarkSmartleadSent}
+        onPushToSmartlead={() => setPushDialogOpen(true)}
         onSetLeadStatus={bulkSetLeadStatus}
+      />
+
+      <PushToCampaignDialog
+        open={pushDialogOpen}
+        onOpenChange={setPushDialogOpen}
+        leadIds={Array.from(selected)}
+        onPushed={handlePushedToCampaign}
       />
 
       <KpiBar kpis={kpis} />
