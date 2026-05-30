@@ -134,32 +134,81 @@ export default function LeadDetailDrawer({
         );
         return;
       }
-      const now = new Date().toISOString();
+      // Apify runs are in flight. Flip status to 'enriching'; the polling
+      // effect below will pick the result up when Apify finishes.
       setLead((prev) =>
         prev
           ? {
               ...prev,
-              subject_line: result.subject,
-              icebreaker: result.icebreaker,
-              enrichment_status: "done",
-              enriched_at: now,
+              enrichment_status: "enriching",
               enrichment_error: null,
             }
           : prev,
       );
-      setActivity((prev) => [
-        {
-          id: `local-${Date.now()}`,
-          lead_id: leadId,
-          user_id: "local",
-          action: "Enriched (icebreaker generated)",
-          created_at: now,
-          actor_name: "You",
-        },
-        ...prev,
-      ]);
     });
   }
+
+  // Poll while an enrichment is in progress. Runs every 5s; stops when the
+  // status changes to done/failed/null or the drawer closes.
+  useEffect(() => {
+    if (!leadId || lead?.enrichment_status !== "enriching") return;
+    let cancelled = false;
+
+    async function tick() {
+      try {
+        const res = await fetch(`/api/enrich/poll/${leadId}`, { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const body = (await res.json()) as {
+          lead: {
+            enrichment_status: string | null;
+            enrichment_error: string | null;
+            subject_line: string | null;
+            icebreaker: string | null;
+            enriched_at: string | null;
+          } | null;
+        };
+        if (cancelled || !body.lead) return;
+        setLead((prev) =>
+          prev
+            ? {
+                ...prev,
+                enrichment_status: body.lead!.enrichment_status as Lead["enrichment_status"],
+                enrichment_error: body.lead!.enrichment_error,
+                subject_line: body.lead!.subject_line,
+                icebreaker: body.lead!.icebreaker,
+                enriched_at: body.lead!.enriched_at,
+              }
+            : prev,
+        );
+        if (body.lead.enrichment_status === "done") {
+          setActivity((prev) => [
+            {
+              id: `local-${Date.now()}`,
+              lead_id: leadId!,
+              user_id: "local",
+              action: "Enriched (icebreaker generated)",
+              created_at: body.lead!.enriched_at ?? new Date().toISOString(),
+              actor_name: "You",
+            },
+            ...prev,
+          ]);
+        } else if (body.lead.enrichment_status === "failed" && body.lead.enrichment_error) {
+          setEnrichError(body.lead.enrichment_error);
+        }
+      } catch {
+        // Network blip — let the next tick retry.
+      }
+    }
+
+    // Run once immediately so we don't sit on a stale 'enriching' if the
+    // server already finished before this effect mounted.
+    void tick();
+    const interval = setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [leadId, lead?.enrichment_status]);
 
   const dirty = notes !== savedNotes;
   const employees = lead ? getLeadValue(lead, "employees") : "";
@@ -316,14 +365,16 @@ export default function LeadDetailDrawer({
                     size="sm"
                     variant={lead.icebreaker ? "ghost" : "default"}
                     onClick={handleEnrich}
-                    disabled={isEnriching}
+                    disabled={isEnriching || lead.enrichment_status === "enriching"}
                   >
                     <Sparkles className="size-3.5" />
-                    {isEnriching
+                    {lead.enrichment_status === "enriching"
                       ? "Enriching…"
-                      : lead.icebreaker
-                        ? "Regenerate"
-                        : "Enrich & write icebreaker"}
+                      : isEnriching
+                        ? "Starting…"
+                        : lead.icebreaker
+                          ? "Regenerate"
+                          : "Enrich & write icebreaker"}
                   </Button>
                 </div>
                 {lead.icebreaker ? (

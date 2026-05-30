@@ -70,6 +70,9 @@ export interface LeadRow {
   enrichment_error: string | null;
   smartlead_campaign_id: string | null;
   smartlead_lead_id: string | null;
+  website_run_id: string | null;
+  linkedin_run_id: string | null;
+  enrichment_started_at: string | null;
   created_at: string;
 }
 

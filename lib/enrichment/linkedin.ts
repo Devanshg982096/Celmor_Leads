@@ -1,6 +1,6 @@
 import "server-only";
 
-const APIFY_LINKEDIN_ACTOR = "dev_fusion~linkedin-profile-scraper";
+export const LINKEDIN_ACTOR_ID = "dev_fusion~linkedin-profile-scraper";
 
 interface LinkedInExperience {
   title?: string;
@@ -9,7 +9,7 @@ interface LinkedInExperience {
   caption?: string;
 }
 
-interface LinkedInProfile {
+export interface LinkedInProfile {
   fullName?: string;
   headline?: string;
   about?: string;
@@ -18,34 +18,14 @@ interface LinkedInProfile {
   addressWithCountry?: string;
   experiences?: LinkedInExperience[];
   educations?: { title?: string; subtitle?: string }[];
-  // dev_fusion returns many fields; we only condense the ones useful for icebreakers
 }
 
-/**
- * Scrape a LinkedIn profile via Apify dev_fusion actor and return a compact
- * text summary fit for an LLM. Returns null if no URL or empty result.
- */
-export async function scrapeLinkedIn(
-  linkedinUrl: string | null | undefined,
-  apifyToken: string,
-): Promise<string | null> {
-  if (!linkedinUrl) return null;
+export function buildLinkedInInput(url: string) {
+  return { profileUrls: [url] };
+}
 
-  const endpoint = `https://api.apify.com/v2/acts/${APIFY_LINKEDIN_ACTOR}/run-sync-get-dataset-items?token=${encodeURIComponent(apifyToken)}`;
-  const body = { profileUrls: [linkedinUrl] };
-
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(180_000),
-  });
-  if (!res.ok) {
-    throw new Error(`Apify LinkedIn scraper failed: ${res.status} ${await res.text()}`);
-  }
-  const items = (await res.json()) as LinkedInProfile[];
+export function summariseLinkedInItems(items: LinkedInProfile[]): string | null {
   if (!items.length) return null;
-
   const p = items[0];
   const parts: string[] = [];
   if (p.fullName) parts.push(`Name: ${p.fullName}`);

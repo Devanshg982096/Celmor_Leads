@@ -2,98 +2,177 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Lead, WorkspaceSettings } from "@/lib/types";
-import { scrapeWebsite } from "./website";
-import { scrapeLinkedIn } from "./linkedin";
+import {
+  getRun,
+  getDatasetItems,
+  isTerminal,
+  startRun,
+  type ApifyRunMeta,
+} from "./apify";
+import {
+  WEBSITE_ACTOR_ID,
+  buildWebsiteInput,
+  summariseWebsiteItems,
+  type ApifyWebsiteItem,
+} from "./website";
+import {
+  LINKEDIN_ACTOR_ID,
+  buildLinkedInInput,
+  summariseLinkedInItems,
+  type LinkedInProfile,
+} from "./linkedin";
 import { generateIcebreaker } from "./claude";
 
-// The codebase uses the un-parametrized SupabaseClient (see lib/leads/actions.ts);
-// matching that keeps the `.update(...)` types from collapsing to `never`.
+// Codebase uses the un-parametrized SupabaseClient (see lib/leads/actions.ts).
 type Client = SupabaseClient;
 
-interface EnrichResult {
+export interface StartResult {
   ok: true;
-  subject: string;
-  icebreaker: string;
+  status: "enriching" | "done";
+  subject?: string;
+  icebreaker?: string;
 }
 
-interface EnrichError {
+export interface PipelineError {
   ok: false;
   error: string;
 }
 
 /**
- * Run the full enrichment pipeline for one lead:
- *   1. Crawl website (Apify website-content-crawler)
- *   2. Scrape LinkedIn profile (Apify dev_fusion)
- *   3. Generate {subject, icebreaker} via Claude using the workspace prompt
+ * Kick off enrichment. Starts the two Apify runs (which return immediately
+ * with run IDs), saves the run IDs on the lead, sets status='enriching'.
+ * Caller polls via finalizeEnrichment until status flips to 'done' or 'failed'.
  *
- * Steps 1 & 2 run in parallel. Either may return null (no source URL or empty
- * result); Claude is still called as long as we have at least one of them.
- *
- * Persists results + status to the leads row. The caller is responsible for
- * providing a Supabase client with permission to update the row (user context
- * for on-demand, service role for the cron).
+ * Returns quickly enough to live inside a Netlify Server Action's timeout.
  */
-export async function enrichLead(
+export async function startEnrichment(
   leadId: string,
   client: Client,
-): Promise<EnrichResult | EnrichError> {
-  const { data: leadRaw, error: leadErr } = await client
-    .from("leads")
-    .select("*")
-    .eq("id", leadId)
-    .maybeSingle();
-  if (leadErr || !leadRaw) {
-    return { ok: false, error: leadErr?.message ?? "Lead not found" };
-  }
-  const lead = leadRaw as Lead;
+): Promise<StartResult | PipelineError> {
+  const lead = await fetchLead(client, leadId);
+  if (!lead) return { ok: false, error: "Lead not found" };
 
-  const { data: wsRaw } = await client
-    .from("workspace_settings")
-    .select("*")
-    .eq("id", 1)
-    .maybeSingle();
-  const ws = wsRaw as WorkspaceSettings | null;
+  const ws = await fetchSettings(client);
   if (!ws?.apify_token) return finalize(client, leadId, "Apify token not set in Settings");
   if (!ws.anthropic_api_key) return finalize(client, leadId, "Anthropic key not set in Settings");
 
-  // Mark enriching
-  await client
-    .from("leads")
-    .update({ enrichment_status: "enriching", enrichment_error: null })
-    .eq("id", leadId);
-
   const websiteUrl = pickWebsite(lead);
   const linkedinUrl = pickLinkedIn(lead);
+  if (!websiteUrl && !linkedinUrl) {
+    return finalize(client, leadId, "Lead has neither a website nor a LinkedIn URL");
+  }
+
+  // Kick off both runs in parallel. Each call returns in <2s with a run id.
+  const [websiteStart, linkedinStart] = await Promise.all([
+    websiteUrl
+      ? startRun(WEBSITE_ACTOR_ID, buildWebsiteInput(websiteUrl), ws.apify_token).catch(
+          (e) => ({ error: e instanceof Error ? e.message : String(e) }),
+        )
+      : Promise.resolve(null),
+    linkedinUrl
+      ? startRun(LINKEDIN_ACTOR_ID, buildLinkedInInput(linkedinUrl), ws.apify_token).catch(
+          (e) => ({ error: e instanceof Error ? e.message : String(e) }),
+        )
+      : Promise.resolve(null),
+  ]);
+
+  const websiteRunId = isRun(websiteStart) ? websiteStart.id : null;
+  const linkedinRunId = isRun(linkedinStart) ? linkedinStart.id : null;
+
+  // If both attempts errored at start, surface the upstream errors immediately.
+  if (!websiteRunId && !linkedinRunId) {
+    const reasons: string[] = [];
+    if (websiteUrl && websiteStart && "error" in websiteStart) reasons.push(`website: ${websiteStart.error}`);
+    if (linkedinUrl && linkedinStart && "error" in linkedinStart) reasons.push(`linkedin: ${linkedinStart.error}`);
+    return finalize(client, leadId, `Could not start any Apify run — ${reasons.join("; ")}`);
+  }
+
+  await client
+    .from("leads")
+    .update({
+      enrichment_status: "enriching",
+      enrichment_error: null,
+      enrichment_started_at: new Date().toISOString(),
+      website_run_id: websiteRunId,
+      linkedin_run_id: linkedinRunId,
+      // Keep prior results around until we have fresh ones.
+    })
+    .eq("id", leadId);
+
+  return { ok: true, status: "enriching" };
+}
+
+/**
+ * Poll Apify for run status; once both runs are terminal, fetch results,
+ * call Claude, and write the final result.
+ *
+ * Safe to call repeatedly — no-ops if the runs aren't done yet, and idempotent
+ * if the row has already reached a terminal state.
+ */
+export async function finalizeEnrichment(
+  leadId: string,
+  client: Client,
+): Promise<StartResult | PipelineError> {
+  const lead = await fetchLead(client, leadId);
+  if (!lead) return { ok: false, error: "Lead not found" };
+
+  // Nothing to poll for if we never entered enriching, or we already finished.
+  if (lead.enrichment_status === "done") {
+    return {
+      ok: true,
+      status: "done",
+      subject: lead.subject_line ?? undefined,
+      icebreaker: lead.icebreaker ?? undefined,
+    };
+  }
+  if (lead.enrichment_status !== "enriching") {
+    return { ok: false, error: `Lead is not enriching (status=${lead.enrichment_status ?? "null"})` };
+  }
+
+  const ws = await fetchSettings(client);
+  if (!ws?.apify_token) return finalize(client, leadId, "Apify token not set in Settings");
+  if (!ws.anthropic_api_key) return finalize(client, leadId, "Anthropic key not set in Settings");
+
+  const [websiteRun, linkedinRun] = await Promise.all([
+    lead.website_run_id ? getRun(lead.website_run_id, ws.apify_token).catch(toErrorMeta) : null,
+    lead.linkedin_run_id ? getRun(lead.linkedin_run_id, ws.apify_token).catch(toErrorMeta) : null,
+  ]);
+
+  // If either run is still in progress, do nothing. The next poll will check again.
+  const websiteDone = websiteRun === null || isTerminalMeta(websiteRun);
+  const linkedinDone = linkedinRun === null || isTerminalMeta(linkedinRun);
+  if (!websiteDone || !linkedinDone) {
+    return { ok: true, status: "enriching" };
+  }
+
+  // Both terminal — fetch items from whichever succeeded.
+  const websiteSummary = await fetchSummary(
+    websiteRun,
+    ws.apify_token,
+    (items: ApifyWebsiteItem[]) => summariseWebsiteItems(items),
+  );
+  const linkedinSummary = await fetchSummary(
+    linkedinRun,
+    ws.apify_token,
+    (items: LinkedInProfile[]) => summariseLinkedInItems(items),
+  );
+
+  if (!websiteSummary.summary && !linkedinSummary.summary) {
+    const reasons = [
+      `website: ${websiteSummary.reason}`,
+      `linkedin: ${linkedinSummary.reason}`,
+    ];
+    return finalize(client, leadId, `Both sources empty — ${reasons.join("; ")}`);
+  }
 
   try {
-    const [websiteRes, linkedinRes] = await Promise.all([
-      runStep("website", websiteUrl, () =>
-        scrapeWebsite(websiteUrl, ws.apify_token!),
-      ),
-      runStep("linkedin", linkedinUrl, () =>
-        scrapeLinkedIn(linkedinUrl, ws.apify_token!),
-      ),
-    ]);
-
-    const websiteSummary = websiteRes.summary;
-    const linkedinSummary = linkedinRes.summary;
-
-    if (!websiteSummary && !linkedinSummary) {
-      // Build a specific reason so the user knows *why* both failed.
-      const reasons: string[] = [];
-      reasons.push(`website: ${websiteRes.reason}`);
-      reasons.push(`linkedin: ${linkedinRes.reason}`);
-      return finalize(client, leadId, `Both sources empty — ${reasons.join("; ")}`);
-    }
-
     const { subject, icebreaker } = await generateIcebreaker(
       {
         name: lead.name,
         title: lead.title,
         company: lead.company,
-        websiteSummary,
-        linkedinSummary,
+        websiteSummary: websiteSummary.summary,
+        linkedinSummary: linkedinSummary.summary,
       },
       ws.icebreaker_prompt,
       ws.anthropic_api_key,
@@ -103,63 +182,107 @@ export async function enrichLead(
     const { error: updateErr } = await client
       .from("leads")
       .update({
-        website_summary: websiteSummary,
-        linkedin_summary: linkedinSummary,
+        website_summary: websiteSummary.summary,
+        linkedin_summary: linkedinSummary.summary,
         subject_line: subject,
         icebreaker,
         enriched_at: now,
         enrichment_status: "done",
         enrichment_error: null,
+        website_run_id: null,
+        linkedin_run_id: null,
       })
       .eq("id", leadId);
     if (updateErr) return finalize(client, leadId, updateErr.message);
 
-    return { ok: true, subject, icebreaker };
+    return { ok: true, status: "done", subject, icebreaker };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown enrichment error";
     return finalize(client, leadId, msg);
   }
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+async function fetchLead(client: Client, leadId: string): Promise<Lead | null> {
+  const { data } = await client
+    .from("leads")
+    .select("*")
+    .eq("id", leadId)
+    .maybeSingle();
+  return (data as Lead | null) ?? null;
+}
+
+async function fetchSettings(client: Client): Promise<WorkspaceSettings | null> {
+  const { data } = await client
+    .from("workspace_settings")
+    .select("*")
+    .eq("id", 1)
+    .maybeSingle();
+  return (data as WorkspaceSettings | null) ?? null;
+}
+
 async function finalize(
   client: Client,
   leadId: string,
   errorMsg: string,
-): Promise<EnrichError> {
+): Promise<PipelineError> {
   await client
     .from("leads")
-    .update({ enrichment_status: "failed", enrichment_error: errorMsg })
+    .update({
+      enrichment_status: "failed",
+      enrichment_error: errorMsg,
+      website_run_id: null,
+      linkedin_run_id: null,
+    })
     .eq("id", leadId);
   return { ok: false, error: errorMsg };
 }
 
-interface StepResult {
+type StartOutcome = ApifyRunMeta | { error: string } | null;
+
+function isRun(x: StartOutcome): x is ApifyRunMeta {
+  return !!x && "id" in x;
+}
+
+type RunMetaOrError = ApifyRunMeta | { error: string };
+
+function toErrorMeta(e: unknown): { error: string } {
+  return { error: e instanceof Error ? e.message : String(e) };
+}
+
+function isTerminalMeta(m: RunMetaOrError): boolean {
+  if ("error" in m) return true; // treat fetch errors as terminal failure
+  return isTerminal(m.status);
+}
+
+interface SummaryResult {
   summary: string | null;
   reason: string;
 }
 
-async function runStep(
-  label: string,
-  url: string | null,
-  fn: () => Promise<string | null>,
-): Promise<StepResult> {
-  if (!url) return { summary: null, reason: "no URL on lead" };
+async function fetchSummary<T>(
+  meta: RunMetaOrError | null,
+  token: string,
+  summarise: (items: T[]) => string | null,
+): Promise<SummaryResult> {
+  if (meta === null) return { summary: null, reason: "no URL on lead" };
+  if ("error" in meta) return { summary: null, reason: `poll failed: ${meta.error.slice(0, 200)}` };
+  if (meta.status !== "SUCCEEDED") {
+    return { summary: null, reason: `Apify run ${meta.status.toLowerCase()}` };
+  }
   try {
-    const summary = await fn();
-    if (!summary) return { summary: null, reason: "scraper returned empty" };
-    return { summary, reason: "ok" };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[enrich] ${label} step failed`, msg);
-    // Truncate so a giant API error doesn't blow the DB column.
-    return { summary: null, reason: msg.slice(0, 240) };
+    const items = await getDatasetItems<T>(meta.defaultDatasetId, token);
+    const summary = summarise(items);
+    return summary
+      ? { summary, reason: "ok" }
+      : { summary: null, reason: "scraper returned empty" };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { summary: null, reason: `dataset fetch failed: ${msg.slice(0, 200)}` };
   }
 }
 
-/**
- * Resolve a usable website URL for a lead. Tries every known key both as a
- * canonical column and inside raw_data.
- */
 function pickWebsite(lead: Lead): string | null {
   const raw = lead.raw_data ?? {};
   const candidates: unknown[] = [
@@ -176,10 +299,6 @@ function pickWebsite(lead: Lead): string | null {
   return null;
 }
 
-/**
- * Resolve a usable LinkedIn profile URL. Prefer the canonical column,
- * then fall back to common raw_data keys.
- */
 function pickLinkedIn(lead: Lead): string | null {
   if (lead.linkedin_url && lead.linkedin_url.trim().length > 0) {
     return lead.linkedin_url.trim();

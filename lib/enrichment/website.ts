@@ -1,7 +1,6 @@
 import "server-only";
 
-const APIFY_WEBSITE_ACTOR =
-  "apify~website-content-crawler/run-sync-get-dataset-items";
+export const WEBSITE_ACTOR_ID = "apify~website-content-crawler";
 
 interface ApifyWebsiteItem {
   url?: string;
@@ -10,21 +9,10 @@ interface ApifyWebsiteItem {
   metadata?: { title?: string; description?: string };
 }
 
-/**
- * Crawl the lead's website with Apify and return a short markdown summary
- * suitable to feed an LLM. Returns null if no URL or the crawl yields nothing.
- *
- * Mirrors the n8n flow: 5 pages, depth 2, playwright:adaptive, maxResults=1.
- */
-export async function scrapeWebsite(
-  url: string | null | undefined,
-  apifyToken: string,
-): Promise<string | null> {
-  if (!url) return null;
+/** Mirrors the n8n flow exactly: 5 pages, depth 2, playwright:adaptive, maxResults=1. */
+export function buildWebsiteInput(url: string) {
   const target = url.startsWith("http") ? url : `https://${url}`;
-
-  const endpoint = `https://api.apify.com/v2/acts/${APIFY_WEBSITE_ACTOR}?token=${encodeURIComponent(apifyToken)}`;
-  const body = {
+  return {
     startUrls: [{ url: target }],
     maxCrawlPages: 5,
     maxCrawlDepth: 2,
@@ -36,33 +24,21 @@ export async function scrapeWebsite(
     requestTimeoutSecs: 30,
     readableTextCharThreshold: 100,
   };
+}
 
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(180_000),
-  });
-  if (!res.ok) {
-    throw new Error(`Apify website crawler failed: ${res.status} ${await res.text()}`);
-  }
-  const items = (await res.json()) as ApifyWebsiteItem[];
+/** Condense the dataset's first item into <=6k chars of markdown for the LLM. */
+export function summariseWebsiteItems(items: ApifyWebsiteItem[]): string | null {
   if (!items.length) return null;
-
   const first = items[0];
-  const title = first.metadata?.title ?? "";
-  const description = first.metadata?.description ?? "";
-  const body_text = first.markdown ?? first.text ?? "";
-
   const composed = [
-    title && `# ${title}`,
-    description && description,
-    body_text,
+    first.metadata?.title && `# ${first.metadata.title}`,
+    first.metadata?.description,
+    first.markdown ?? first.text,
   ]
     .filter(Boolean)
     .join("\n\n")
     .trim();
-
-  // Cap at ~6k chars so we don't blow the LLM context with one page.
-  return composed.slice(0, 6000);
+  return composed.length === 0 ? null : composed.slice(0, 6000);
 }
+
+export type { ApifyWebsiteItem };
