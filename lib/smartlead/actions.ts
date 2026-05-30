@@ -16,6 +16,7 @@ import {
   type SmartleadLead,
   type SmartleadSequenceStep,
 } from "./client";
+import { plainToSmartleadHtml, smartleadHtmlToPlain } from "./html";
 
 async function getApiKey(): Promise<string | null> {
   const supabase = await createClient();
@@ -78,7 +79,12 @@ export async function saveSequenceAction(
   const apiKey = await getApiKey();
   if (!apiKey) return { ok: false, error: "Smartlead API key not set in Settings." };
   try {
-    await saveSequence(apiKey, campaignId, steps);
+    // Convert plain-text bodies to Smartlead's expected HTML before sending.
+    const htmlSteps = steps.map((s) => ({
+      ...s,
+      email_body: plainToSmartleadHtml(s.email_body),
+    }));
+    await saveSequence(apiKey, campaignId, htmlSteps);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -98,10 +104,15 @@ export async function getCampaignDetailAction(
   const apiKey = await getApiKey();
   if (!apiKey) return { ok: false, error: "Smartlead API key not set in Settings." };
   try {
-    const [sequence, analytics] = await Promise.all([
+    const [sequenceRaw, analytics] = await Promise.all([
       getSequence(apiKey, campaignId),
       getAnalytics(apiKey, campaignId).catch(() => ({}) as SmartleadAnalytics),
     ]);
+    // Decode Smartlead's HTML body so the textarea editor shows plain text.
+    const sequence = sequenceRaw.map((s) => ({
+      ...s,
+      email_body: s.email_body ? smartleadHtmlToPlain(s.email_body) : s.email_body,
+    }));
     return { ok: true, sequence, analytics };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
