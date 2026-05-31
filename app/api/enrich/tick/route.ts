@@ -108,14 +108,20 @@ export async function POST(req: Request) {
   }
 
   // ─── 2. Start new enrichments ─────────────────────────────────────────────
-  // Priority: leads marked 'pending' by a campaign plan's "Generate icebreakers"
-  // button. Fill remaining slots with the steady-state queue (null/failed).
+  // Priority queue covers two cases:
+  //   (a) 'pending' — fresh queue from a plan's "Generate icebreakers"
+  //   (b) 'failed' inside a plan — auto-retry, so a plan can self-heal
+  //       without the user re-clicking Generate icebreakers
+  // Background queue (no plan, just qualified) is the residual.
   const { data: priorityRows } = await supabase
     .from("leads")
     .select("id")
     .eq("qualified", "qualified")
     .is("icebreaker", null)
-    .eq("enrichment_status", "pending")
+    .or(
+      "enrichment_status.eq.pending," +
+        "and(enrichment_status.eq.failed,campaign_plan_id.not.is.null)",
+    )
     .order("created_at", { ascending: true })
     .limit(BATCH_SIZE);
 
