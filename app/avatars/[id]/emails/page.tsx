@@ -60,6 +60,15 @@ export default async function EmailsChannelPage({
           currentUserId,
         })
       : Promise.resolve([]);
+  // Plans for the Plan column in the Leads sub-tab. Cheap (a few rows max).
+  const plansForLeadsPromise =
+    activeTab === "leads"
+      ? supabase
+          .from("campaign_plans")
+          .select("id, name")
+          .eq("avatar_id", id)
+          .then(({ data }) => (data ?? []) as { id: string; name: string }[])
+      : Promise.resolve([] as { id: string; name: string }[]);
   const smartleadPromise =
     activeTab === "smartlead" ? listCampaignsAction() : Promise.resolve(null);
   const plannerPromise =
@@ -77,11 +86,15 @@ export default async function EmailsChannelPage({
         ])
       : Promise.resolve(null);
 
-  const [leads, smartlead, planner] = await Promise.all([
+  const [leads, smartlead, planner, plansForLeads] = await Promise.all([
     leadsPromise,
     smartleadPromise,
     plannerPromise,
+    plansForLeadsPromise,
   ]);
+
+  const planNameById: Record<string, string> = {};
+  for (const p of plansForLeads) planNameById[p.id] = p.name;
 
   return (
     <AppShell
@@ -116,7 +129,7 @@ export default async function EmailsChannelPage({
       <SubTabs avatarId={id} active={activeTab} myLeadsOnly={myLeadsOnly} />
 
       {activeTab === "leads" ? (
-        <EmailsView leads={leads} profiles={profiles} />
+        <EmailsView leads={leads} profiles={profiles} planNameById={planNameById} />
       ) : activeTab === "smartlead" ? (
         <SmartleadView
           initialCampaigns={

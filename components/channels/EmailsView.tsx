@@ -43,6 +43,7 @@ import type {
 interface Props {
   leads: Lead[];
   profiles: Profile[];
+  planNameById: Record<string, string>;
 }
 
 function firstName(name: string): string {
@@ -76,7 +77,7 @@ function IcebreakerBadge({ lead }: { lead: Lead }) {
   return <Badge variant="outline" className="text-[var(--text-tertiary)]">—</Badge>;
 }
 
-export default function EmailsView({ leads: initialLeads, profiles }: Props) {
+export default function EmailsView({ leads: initialLeads, profiles, planNameById }: Props) {
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<EmailStatus | "all">("all");
@@ -291,6 +292,7 @@ export default function EmailsView({ leads: initialLeads, profiles }: Props) {
               <TableHead>Website</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Icebreaker</TableHead>
+              <TableHead>Plan</TableHead>
               <TableHead>Email Status</TableHead>
               <TableHead>Qualified</TableHead>
               <TableHead>Owner</TableHead>
@@ -299,7 +301,7 @@ export default function EmailsView({ leads: initialLeads, profiles }: Props) {
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
                   No qualified leads with an email address.
                 </TableCell>
               </TableRow>
@@ -353,6 +355,18 @@ export default function EmailsView({ leads: initialLeads, profiles }: Props) {
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
                       <IcebreakerBadge lead={lead} />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {lead.campaign_plan_id && planNameById[lead.campaign_plan_id] ? (
+                        <span
+                          className="text-[12.5px] text-[var(--text-primary)]"
+                          title={`Plan #${lead.campaign_plan_id}`}
+                        >
+                          {planNameById[lead.campaign_plan_id]}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <StatusCell<EmailStatus>
