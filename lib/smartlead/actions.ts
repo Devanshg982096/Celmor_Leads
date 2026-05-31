@@ -5,6 +5,7 @@ import type { Lead, WorkspaceSettings } from "@/lib/types";
 import {
   addLeadsToCampaign,
   createCampaign,
+  deleteCampaign,
   getAnalytics,
   getSequence,
   listCampaigns,
@@ -41,6 +42,50 @@ export async function listCampaignsAction(): Promise<
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * Delete a Smartlead campaign and clean up Narada-side references:
+ *   - Unlink it from any campaign_plans that point at it
+ *   - Clear lead.smartlead_campaign_id and reset lead.email_status to 'none'
+ *     for any lead currently tagged with this campaign (Smartlead drops the
+ *     lead its end, so 'smartlead_sent' would lie)
+ */
+export async function deleteCampaignAction(
+  campaignId: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not authenticated." };
+
+  const apiKey = await getApiKey();
+  if (!apiKey) return { ok: false, error: "Smartlead API key not set in Settings." };
+
+  try {
+    await deleteCampaign(apiKey, campaignId);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+
+  // Clean up Narada-side references.
+  const idStr = String(campaignId);
+  await supabase
+    .from("campaign_plans")
+    .update({ smartlead_campaign_id: null, updated_at: new Date().toISOString() })
+    .eq("smartlead_campaign_id", idStr);
+
+  await supabase
+    .from("leads")
+    .update({
+      smartlead_campaign_id: null,
+      email_status: "none",
+      email_status_updated_at: new Date().toISOString(),
+    })
+    .eq("smartlead_campaign_id", idStr);
+
+  return { ok: true };
 }
 
 export async function createCampaignAction(

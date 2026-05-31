@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  deleteCampaignAction,
   getCampaignDetailAction,
   listCampaignsAction,
 } from "@/lib/smartlead/actions";
@@ -33,6 +34,8 @@ export default function SmartleadView({ initialCampaigns, initialError }: Props)
   const [isRefreshing, startRefreshTransition] = useTransition();
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [isDeleting, startDelete] = useTransition();
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Load detail for the currently selected campaign
   useEffect(() => {
@@ -78,6 +81,33 @@ export default function SmartleadView({ initialCampaigns, initialError }: Props)
     setSequence([]);
     setAnalytics(null);
     setEditing(true); // jump straight into editing the new campaign's sequence
+  }
+
+  function handleDelete() {
+    if (selectedId === null) return;
+    const target = campaigns?.find((c) => c.id === selectedId);
+    if (!target) return;
+    const confirmed = window.confirm(
+      `Delete the Smartlead campaign "${target.name}" (#${target.id})?\n\n` +
+        "This also deletes the campaign's leads + sequence on Smartlead's side, " +
+        "and resets Narada's email_status for those leads back to 'none'.\n\n" +
+        "Cannot be undone.",
+    );
+    if (!confirmed) return;
+    setDeleteError(null);
+    startDelete(async () => {
+      const result = await deleteCampaignAction(selectedId);
+      if (!result.ok) {
+        setDeleteError(result.error);
+        return;
+      }
+      setCampaigns((prev) => (prev ? prev.filter((c) => c.id !== selectedId) : prev));
+      const next = (campaigns ?? []).find((c) => c.id !== selectedId);
+      setSelectedId(next ? next.id : null);
+      setSequence([]);
+      setAnalytics(null);
+      setEditing(false);
+    });
   }
 
   if (error) {
@@ -206,11 +236,23 @@ export default function SmartleadView({ initialCampaigns, initialError }: Props)
           />
         ) : (
           <div className="space-y-5">
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="text-[var(--status-danger)] hover:text-[var(--status-danger)]"
+              >
+                {isDeleting ? "Deleting…" : "Delete campaign"}
+              </Button>
               <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
                 {sequence.length === 0 ? "Add sequence" : "Edit sequence"}
               </Button>
             </div>
+            {deleteError && (
+              <p className="text-[12.5px] text-[var(--status-danger)]">{deleteError}</p>
+            )}
             <Analytics a={analytics} />
             <Sequence steps={sequence} />
           </div>

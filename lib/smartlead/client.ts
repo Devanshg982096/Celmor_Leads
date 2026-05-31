@@ -183,6 +183,30 @@ interface AddLeadsBody {
   };
 }
 
+/**
+ * Permanently delete a Smartlead campaign. Smartlead also removes its
+ * associated leads + sequence from their side. Returns true on success.
+ *
+ * Smartlead currently exposes this at DELETE /campaigns/{id}; some accounts
+ * still use the legacy /campaigns/{id}/delete POST. We try both.
+ */
+export async function deleteCampaign(
+  apiKey: string,
+  campaignId: number,
+): Promise<void> {
+  try {
+    await request(apiKey, `/campaigns/${campaignId}`, { method: "DELETE" });
+    return;
+  } catch (e) {
+    if (e instanceof SmartleadError && (e.status === 404 || e.status === 405)) {
+      // Fallback for older API versions that only accept POST /delete.
+      await request(apiKey, `/campaigns/${campaignId}/delete`, { method: "POST" });
+      return;
+    }
+    throw e;
+  }
+}
+
 export interface SmartleadCampaignLead {
   email: string;
   first_name?: string;
