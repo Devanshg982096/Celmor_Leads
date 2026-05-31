@@ -4,6 +4,7 @@ import AppShell from "@/components/layout/AppShell";
 import ChannelHeader from "@/components/channels/ChannelHeader";
 import EmailsView from "@/components/channels/EmailsView";
 import SmartleadView from "@/components/channels/SmartleadView";
+import PlannerView from "@/components/channels/PlannerView";
 import ChannelTabs from "@/components/avatars/ChannelTabs";
 import { createClient } from "@/lib/supabase/server";
 import { listProfiles } from "@/lib/avatars/leads-actions";
@@ -12,11 +13,13 @@ import {
   listAvatarsForSwitcher,
 } from "@/lib/avatars/channel-queries";
 import { listCampaignsAction } from "@/lib/smartlead/actions";
+import { listPlansAction } from "@/lib/planner/actions";
+import { getWorkspaceSettings } from "@/lib/settings/workspace-actions";
 import type { Avatar } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-type SubTab = "leads" | "smartlead";
+type SubTab = "leads" | "smartlead" | "planner";
 
 export default async function EmailsChannelPage({
   params,
@@ -28,7 +31,8 @@ export default async function EmailsChannelPage({
   const { id } = await params;
   const { my, tab } = await searchParams;
   const myLeadsOnly = my !== "0";
-  const activeTab: SubTab = tab === "smartlead" ? "smartlead" : "leads";
+  const activeTab: SubTab =
+    tab === "smartlead" ? "smartlead" : tab === "planner" ? "planner" : "leads";
 
   const supabase = await createClient();
   const { data: avatarRow } = await supabase
@@ -58,8 +62,26 @@ export default async function EmailsChannelPage({
       : Promise.resolve([]);
   const smartleadPromise =
     activeTab === "smartlead" ? listCampaignsAction() : Promise.resolve(null);
+  const plannerPromise =
+    activeTab === "planner"
+      ? Promise.all([
+          listPlansAction(id),
+          // Pool count: qualified leads on this avatar not yet in a plan
+          supabase
+            .from("leads")
+            .select("id", { count: "exact", head: true })
+            .eq("avatar_id", id)
+            .eq("qualified", "qualified")
+            .is("campaign_plan_id", null),
+          getWorkspaceSettings(),
+        ])
+      : Promise.resolve(null);
 
-  const [leads, smartlead] = await Promise.all([leadsPromise, smartleadPromise]);
+  const [leads, smartlead, planner] = await Promise.all([
+    leadsPromise,
+    smartleadPromise,
+    plannerPromise,
+  ]);
 
   return (
     <AppShell
@@ -95,7 +117,7 @@ export default async function EmailsChannelPage({
 
       {activeTab === "leads" ? (
         <EmailsView leads={leads} profiles={profiles} />
-      ) : (
+      ) : activeTab === "smartlead" ? (
         <SmartleadView
           initialCampaigns={
             smartlead && "ok" in smartlead && smartlead.ok
@@ -105,6 +127,13 @@ export default async function EmailsChannelPage({
           initialError={
             smartlead && "ok" in smartlead && !smartlead.ok ? smartlead.error : null
           }
+        />
+      ) : (
+        <PlannerView
+          avatarId={id}
+          initialPlans={planner ? planner[0] : []}
+          unassignedPoolCount={planner ? (planner[1].count ?? 0) : 0}
+          smartleadKeyPresent={!!planner?.[2]?.smartlead_api_key}
         />
       )}
     </AppShell>
@@ -124,6 +153,7 @@ function SubTabs({
   const myParam = myLeadsOnly ? "" : "&my=0";
   const tabs: { label: string; value: SubTab; href: string }[] = [
     { label: "Leads", value: "leads", href: `/avatars/${avatarId}/emails?tab=leads${myParam}` },
+    { label: "Planner", value: "planner", href: `/avatars/${avatarId}/emails?tab=planner${myParam}` },
     { label: "Smartlead", value: "smartlead", href: `/avatars/${avatarId}/emails?tab=smartlead${myParam}` },
   ];
 

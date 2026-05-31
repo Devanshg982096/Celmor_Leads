@@ -5,7 +5,7 @@ import { finalizeEnrichment, startEnrichment } from "@/lib/enrichment";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const BATCH_SIZE = 2;
+const BATCH_SIZE = 5;
 // Treat enrichments running for >10 min as stuck and re-queue them.
 const STUCK_AFTER_MS = 10 * 60 * 1000;
 
@@ -51,7 +51,9 @@ export async function POST(req: Request) {
     stillRunning: 0,
     forceFailed: 0,
     started: 0,
+    started_priority: 0,
     startFailed: 0,
+    plans_promoted: 0,
     errors: [] as string[],
   };
 
@@ -89,26 +91,83 @@ export async function POST(req: Request) {
   }
 
   // ─── 2. Start new enrichments ─────────────────────────────────────────────
-  const { data: candidates } = await supabase
+  // Priority: leads marked 'pending' by a campaign plan's "Generate icebreakers"
+  // button. Fill remaining slots with the steady-state queue (null/failed).
+  const { data: priorityRows } = await supabase
     .from("leads")
     .select("id")
     .eq("qualified", "qualified")
     .is("icebreaker", null)
-    .or("enrichment_status.is.null,enrichment_status.eq.failed")
+    .eq("enrichment_status", "pending")
     .order("created_at", { ascending: true })
     .limit(BATCH_SIZE);
 
-  for (const row of (candidates ?? []) as { id: string }[]) {
+  const priorityIds = ((priorityRows ?? []) as { id: string }[]).map((r) => r.id);
+  const remaining = BATCH_SIZE - priorityIds.length;
+
+  let backgroundIds: string[] = [];
+  if (remaining > 0) {
+    const { data: bgRows } = await supabase
+      .from("leads")
+      .select("id")
+      .eq("qualified", "qualified")
+      .is("icebreaker", null)
+      .or("enrichment_status.is.null,enrichment_status.eq.failed")
+      .order("created_at", { ascending: true })
+      .limit(remaining);
+    backgroundIds = ((bgRows ?? []) as { id: string }[]).map((r) => r.id);
+  }
+
+  for (const id of priorityIds) {
     try {
-      const result = await startEnrichment(row.id, supabase);
-      if (result.ok) summary.started++;
-      else {
+      const result = await startEnrichment(id, supabase);
+      if (result.ok) {
+        summary.started++;
+        summary.started_priority++;
+      } else {
         summary.startFailed++;
-        summary.errors.push(`${row.id}: ${result.error}`);
+        summary.errors.push(`${id}: ${result.error}`);
       }
     } catch (e) {
       summary.startFailed++;
-      summary.errors.push(`${row.id}: ${e instanceof Error ? e.message : String(e)}`);
+      summary.errors.push(`${id}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  for (const id of backgroundIds) {
+    try {
+      const result = await startEnrichment(id, supabase);
+      if (result.ok) summary.started++;
+      else {
+        summary.startFailed++;
+        summary.errors.push(`${id}: ${result.error}`);
+      }
+    } catch (e) {
+      summary.startFailed++;
+      summary.errors.push(`${id}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // ─── 3. Promote plans whose leads are fully enriched ──────────────────────
+  // For every plan currently 'enriching', if all assigned leads have an
+  // icebreaker, flip to 'ready' so the UI shows the Push button.
+  const { data: enrichingPlans } = await supabase
+    .from("campaign_plans")
+    .select("id")
+    .eq("status", "enriching");
+  for (const p of (enrichingPlans ?? []) as { id: string }[]) {
+    const { data: leadRows } = await supabase
+      .from("leads")
+      .select("icebreaker")
+      .eq("campaign_plan_id", p.id);
+    const rows = (leadRows ?? []) as { icebreaker: string | null }[];
+    if (rows.length === 0) continue;
+    const allDone = rows.every((l) => !!l.icebreaker);
+    if (allDone) {
+      await supabase
+        .from("campaign_plans")
+        .update({ status: "ready", updated_at: new Date().toISOString() })
+        .eq("id", p.id);
+      summary.plans_promoted++;
     }
   }
 

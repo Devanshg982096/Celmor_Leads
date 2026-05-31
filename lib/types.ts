@@ -73,7 +73,28 @@ export interface LeadRow {
   website_run_id: string | null;
   linkedin_run_id: string | null;
   enrichment_started_at: string | null;
+  campaign_plan_id: string | null;
   created_at: string;
+}
+
+export type CampaignPlanStatus =
+  | "draft"
+  | "enriching"
+  | "ready"
+  | "pushed"
+  | "done";
+
+export interface CampaignPlanRow {
+  id: string;
+  avatar_id: string;
+  name: string;
+  target_lead_count: number;
+  smartlead_campaign_id: string | null;
+  status: CampaignPlanStatus;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface WorkspaceSettingsRow {
@@ -156,6 +177,7 @@ export type Avatar = AvatarRow;
 export type Lead = LeadRow;
 export type ActivityLog = ActivityLogRow;
 export type WorkspaceSettings = WorkspaceSettingsRow;
+export type CampaignPlan = CampaignPlanRow;
 
 export interface AvatarWithStats extends AvatarRow {
   owner_split: { owner_id: string | null; display_name: string; count: number }[];
