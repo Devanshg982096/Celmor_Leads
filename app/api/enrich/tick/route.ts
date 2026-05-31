@@ -5,9 +5,14 @@ import { finalizeEnrichment, startEnrichment } from "@/lib/enrichment";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const BATCH_SIZE = 5;
-// Treat enrichments running for >10 min as stuck and re-queue them.
-const STUCK_AFTER_MS = 10 * 60 * 1000;
+// Slow and steady: 1 lead per tick. With a 2-minute cron interval that's
+// ~30 leads/hour — the whole pipeline (Apify website + LinkedIn + Claude)
+// can run unhurried without competing parallel work.
+const BATCH_SIZE = 1;
+// Apify's LinkedIn scraper can legitimately take 10-15 min per profile. We
+// only force-fail once a run is *clearly* abandoned. The finalize step is
+// always attempted first; this timeout is a backstop, not a primary check.
+const STUCK_AFTER_MS = 30 * 60 * 1000;
 
 /**
  * Scheduled tick: progresses in-flight enrichments and starts new ones.
@@ -67,27 +72,39 @@ export async function POST(req: Request) {
     const ageMs = row.enrichment_started_at
       ? Date.now() - new Date(row.enrichment_started_at).getTime()
       : Number.POSITIVE_INFINITY;
-    if (ageMs > STUCK_AFTER_MS) {
-      await supabase
-        .from("leads")
-        .update({
-          enrichment_status: "failed",
-          enrichment_error: `Stuck >${Math.round(STUCK_AFTER_MS / 60000)} min — force failed by cron`,
-          website_run_id: null,
-          linkedin_run_id: null,
-        })
-        .eq("id", row.id);
-      summary.forceFailed++;
-      continue;
-    }
+
+    // ALWAYS try to finalize first — Apify may have completed legitimately,
+    // even past our wall-clock timeout. Only after finalize says "still
+    // running" do we consider force-failing on age.
+    let finalized = false;
     try {
       const result = await finalizeEnrichment(row.id, supabase);
-      if (result.ok && result.status === "done") summary.finalized++;
-      else if (result.ok) summary.stillRunning++;
-      else summary.errors.push(`${row.id}: ${result.error}`);
+      if (result.ok && result.status === "done") {
+        summary.finalized++;
+        finalized = true;
+      } else if (result.ok) {
+        // Still running on Apify's side.
+        if (ageMs > STUCK_AFTER_MS) {
+          await supabase
+            .from("leads")
+            .update({
+              enrichment_status: "failed",
+              enrichment_error: `Stuck >${Math.round(STUCK_AFTER_MS / 60000)} min — force failed by cron`,
+              website_run_id: null,
+              linkedin_run_id: null,
+            })
+            .eq("id", row.id);
+          summary.forceFailed++;
+        } else {
+          summary.stillRunning++;
+        }
+      } else {
+        summary.errors.push(`${row.id}: ${result.error}`);
+      }
     } catch (e) {
       summary.errors.push(`${row.id}: ${e instanceof Error ? e.message : String(e)}`);
     }
+    if (finalized) continue;
   }
 
   // ─── 2. Start new enrichments ─────────────────────────────────────────────
