@@ -110,11 +110,14 @@ export async function POST(req: Request) {
   // ─── 2. Start new enrichments ─────────────────────────────────────────────
   // Priority queue covers two cases:
   //   (a) 'pending' — fresh queue from a plan's "Generate icebreakers"
-  //   (b) 'failed' inside a plan AND under MAX_ATTEMPTS — auto-retry so a
-  //       plan self-heals from transient failures, but a lead that's truly
-  //       unenrichable (no website, dead LinkedIn) doesn't poison the queue.
+  //   (b) 'failed' inside a plan, but ONLY if the lead has never actually
+  //       been attempted (attempts = 0). Most enrichment failures are
+  //       deterministic — no website, dead LinkedIn, insufficient source
+  //       material — so retrying wastes Apify calls. One try, move on.
+  // The user can always click 'Generate icebreakers' again to reset
+  // attempts to 0 and retry a lead they think is recoverable.
   // Background queue (no plan, just qualified) is the residual.
-  const MAX_ATTEMPTS = 3;
+  const MAX_ATTEMPTS = 1;
   const { data: priorityRows } = await supabase
     .from("leads")
     .select("id")
