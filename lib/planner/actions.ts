@@ -211,7 +211,11 @@ export async function generateIcebreakersAction(
 
   const { error } = await supabase
     .from("leads")
-    .update({ enrichment_status: "pending", enrichment_error: null })
+    .update({
+      enrichment_status: "pending",
+      enrichment_error: null,
+      enrichment_attempts: 0, // user-driven requeue resets the retry budget
+    })
     .in("id", ids);
   if (error) return { ok: false, error: error.message };
 

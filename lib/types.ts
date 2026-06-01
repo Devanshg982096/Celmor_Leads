@@ -73,6 +73,7 @@ export interface LeadRow {
   website_run_id: string | null;
   linkedin_run_id: string | null;
   enrichment_started_at: string | null;
+  enrichment_attempts: number;
   campaign_plan_id: string | null;
   created_at: string;
 }

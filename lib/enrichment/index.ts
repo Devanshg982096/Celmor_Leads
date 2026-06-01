@@ -93,6 +93,7 @@ export async function startEnrichment(
       enrichment_status: "enriching",
       enrichment_error: null,
       enrichment_started_at: new Date().toISOString(),
+      enrichment_attempts: (lead.enrichment_attempts ?? 0) + 1,
       website_run_id: websiteRunId,
       linkedin_run_id: linkedinRunId,
       // Keep prior results around until we have fresh ones.

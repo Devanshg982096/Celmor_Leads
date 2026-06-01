@@ -110,9 +110,11 @@ export async function POST(req: Request) {
   // ─── 2. Start new enrichments ─────────────────────────────────────────────
   // Priority queue covers two cases:
   //   (a) 'pending' — fresh queue from a plan's "Generate icebreakers"
-  //   (b) 'failed' inside a plan — auto-retry, so a plan can self-heal
-  //       without the user re-clicking Generate icebreakers
+  //   (b) 'failed' inside a plan AND under MAX_ATTEMPTS — auto-retry so a
+  //       plan self-heals from transient failures, but a lead that's truly
+  //       unenrichable (no website, dead LinkedIn) doesn't poison the queue.
   // Background queue (no plan, just qualified) is the residual.
+  const MAX_ATTEMPTS = 3;
   const { data: priorityRows } = await supabase
     .from("leads")
     .select("id")
@@ -120,7 +122,7 @@ export async function POST(req: Request) {
     .is("icebreaker", null)
     .or(
       "enrichment_status.eq.pending," +
-        "and(enrichment_status.eq.failed,campaign_plan_id.not.is.null)",
+        `and(enrichment_status.eq.failed,campaign_plan_id.not.is.null,enrichment_attempts.lt.${MAX_ATTEMPTS})`,
     )
     .order("created_at", { ascending: true })
     .limit(BATCH_SIZE);
