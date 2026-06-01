@@ -36,7 +36,11 @@ export async function proxy(request: NextRequest) {
   // get a 307 to /login and the handler never runs.
   const isPublicApi =
     pathname.startsWith("/api/enrich/tick") ||
-    pathname.startsWith("/api/smartlead/sync");
+    pathname.startsWith("/api/smartlead/sync") ||
+    // Netlify scheduled functions get invoked at /.netlify/functions/<name>.
+    // Without this carve-out the middleware was redirecting Netlify's own
+    // scheduler to /login, so the cron silently never fired.
+    pathname.startsWith("/.netlify/");
 
   if (!user && !isAuthRoute && !isPublicApi) {
     const url = request.nextUrl.clone();
@@ -55,6 +59,8 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Belt-and-braces: also exclude /.netlify/* at the matcher level so the
+    // middleware never even runs for scheduled functions.
+    "/((?!_next/static|_next/image|favicon.ico|\\.netlify|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
