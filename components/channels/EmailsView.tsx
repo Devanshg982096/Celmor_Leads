@@ -74,7 +74,22 @@ function IcebreakerBadge({ lead }: { lead: Lead }) {
       </Badge>
     );
   }
-  return <Badge variant="outline" className="text-[var(--text-tertiary)]">—</Badge>;
+  if (lead.enrichment_status === "pending") {
+    return (
+      <Badge variant="secondary" title="Queued — waiting for the cron to pick it up">
+        Queued
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="text-[var(--text-tertiary)]"
+      title="Never attempted"
+    >
+      —
+    </Badge>
+  );
 }
 
 export default function EmailsView({ leads: initialLeads, profiles, planNameById }: Props) {
