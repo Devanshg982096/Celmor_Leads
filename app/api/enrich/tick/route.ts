@@ -135,12 +135,16 @@ export async function POST(req: Request) {
 
   let backgroundIds: string[] = [];
   if (remaining > 0) {
+    // Background queue: only leads that have NEVER been attempted
+    // (enrichment_status IS NULL). Failed leads are intentionally excluded
+    // — once an attempt has finished, that lead waits for an explicit
+    // requeue via the planner's 'Generate icebreakers' button.
     const { data: bgRows } = await supabase
       .from("leads")
       .select("id")
       .eq("qualified", "qualified")
       .is("icebreaker", null)
-      .or("enrichment_status.is.null,enrichment_status.eq.failed")
+      .is("enrichment_status", null)
       .order("created_at", { ascending: true })
       .limit(remaining);
     backgroundIds = ((bgRows ?? []) as { id: string }[]).map((r) => r.id);
