@@ -425,15 +425,25 @@ function PlanDetail({
           Generate icebreakers
         </Button>
         <Button
-          variant={allEnriched ? "default" : "outline"}
+          variant={plan.enriched_count > 0 ? "default" : "outline"}
           onClick={runPush}
-          disabled={busy || !allEnriched || !plan.smartlead_campaign_id || plan.pushed_count > 0}
+          disabled={
+            busy ||
+            plan.enriched_count === 0 ||
+            !plan.smartlead_campaign_id ||
+            plan.pushed_count > 0
+          }
         >
-          Push to Smartlead
+          Push {plan.enriched_count > 0 ? `${plan.enriched_count} ` : ""}to Smartlead
         </Button>
-        {plan.assigned_count > 0 && !allEnriched && (
+        {plan.assigned_count > 0 && !allEnriched && plan.enriched_count > 0 && (
           <span className="text-[11px] text-[var(--text-tertiary)]">
-            Push unlocks when 100% of assigned leads are enriched.
+            Only enriched leads get pushed. {plan.assigned_count - plan.enriched_count} skipped (failed or still queued).
+          </span>
+        )}
+        {plan.assigned_count > 0 && plan.enriched_count === 0 && (
+          <span className="text-[11px] text-[var(--text-tertiary)]">
+            Push unlocks once at least one lead has an icebreaker.
           </span>
         )}
       </section>
