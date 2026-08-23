@@ -4,7 +4,6 @@ import AppearanceSection from "@/components/settings/AppearanceSection";
 import WorkspaceSection from "@/components/settings/WorkspaceSection";
 import IntegrationsSection from "@/components/settings/IntegrationsSection";
 import IcebreakerPromptSection from "@/components/settings/IcebreakerPromptSection";
-import LinkedInDmSection from "@/components/settings/LinkedInDmSection";
 import AutomationSection from "@/components/settings/AutomationSection";
 import SignOutSection from "@/components/settings/SignOutSection";
 import { createClient } from "@/lib/supabase/server";
@@ -52,15 +51,6 @@ export default async function SettingsPage() {
           apifyTokenPresent={!!ws?.apify_token}
         />
         <IcebreakerPromptSection initialPrompt={ws?.icebreaker_prompt ?? ""} />
-        <LinkedInDmSection
-          initial={{
-            linkedin_dm_template: ws?.linkedin_dm_template ?? "",
-            linkedin_followup_1: ws?.linkedin_followup_1 ?? "",
-            linkedin_followup_2: ws?.linkedin_followup_2 ?? "",
-            linkedin_followup_3: ws?.linkedin_followup_3 ?? "",
-            linkedin_dm_prompt: ws?.linkedin_dm_prompt ?? "",
-          }}
-        />
         <AutomationSection initialEnabled={ws?.cron_enabled ?? true} />
         <SignOutSection />
       </div>

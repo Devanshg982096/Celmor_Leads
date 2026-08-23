@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   FlaskConical,
+  MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -47,7 +48,10 @@ export default function Sidebar({ avatars, user }: Props) {
     return match[1];
   })();
   const settingsActive = pathname.startsWith("/settings");
-  const promptLabActive = pathname.startsWith("/prompt-lab");
+  // The LinkedIn lab lives under /prompt-lab/linkedin, so the icebreaker lab
+  // must match exactly or both would highlight at once.
+  const promptLabActive = pathname === "/prompt-lab";
+  const linkedInLabActive = pathname.startsWith("/prompt-lab/linkedin");
 
   return (
     <aside
@@ -181,7 +185,22 @@ export default function Sidebar({ avatars, user }: Props) {
           )}
         >
           <FlaskConical className="size-4 shrink-0" />
-          {!collapsed && <span>Prompt lab</span>}
+          {!collapsed && <span>Icebreaker lab</span>}
+        </Link>
+
+        <Link
+          href="/prompt-lab/linkedin"
+          title={collapsed ? "LinkedIn lab" : undefined}
+          className={cn(
+            "flex items-center gap-2 rounded-sm py-1.5 text-sm transition-colors",
+            collapsed ? "justify-center px-0" : "px-2",
+            linkedInLabActive
+              ? "bg-[var(--bg-overlay)] text-[var(--text-primary)]"
+              : "text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)] hover:text-[var(--text-primary)]",
+          )}
+        >
+          <MessageSquare className="size-4 shrink-0" />
+          {!collapsed && <span>LinkedIn lab</span>}
         </Link>
 
         <Link
