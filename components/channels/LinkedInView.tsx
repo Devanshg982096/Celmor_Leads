@@ -13,6 +13,14 @@ import StatusCell from "@/components/leads/StatusCell";
 import OwnerCell from "@/components/leads/OwnerCell";
 import QualifiedCell from "@/components/leads/QualifiedCell";
 import LeadDetailDrawer from "@/components/leads/LeadDetailDrawer";
+import DmCell from "@/components/leads/DmCell";
+import GenerateDmBar from "@/components/channels/GenerateDmBar";
+import {
+  DM_SLOTS,
+  dmFor,
+  type DmTemplates,
+  type DmProgress,
+} from "@/lib/leads/linkedin-dm";
 import KpiBar, { percent, type Kpi } from "@/components/channels/KpiBar";
 import LinkedInFunnel from "@/components/channels/LinkedInFunnel";
 import ChipRow from "@/components/channels/ChipRow";
@@ -38,7 +46,23 @@ import type {
 interface Props {
   leads: Lead[];
   profiles: Profile[];
+  /** Fixed message wording from Settings, applied to each lead at render. */
+  dmTemplates: DmTemplates;
+  avatarId: string;
+  dmProgress: DmProgress;
 }
+
+const FLAG_LABEL: Record<string, { text: string; title: string }> = {
+  thin: {
+    text: "Thin",
+    title: "Very little specific to work with. Worth reading before you send.",
+  },
+  not_accounting: {
+    text: "Not an accountant",
+    title:
+      "This person may not work at an accounting firm. The message says 'We only work with Accounting firms', so check before sending.",
+  },
+};
 
 function splitName(name: string): { first: string; last: string } {
   const parts = name.trim().split(/\s+/);
@@ -87,7 +111,13 @@ const REPLIED_STAGES = new Set<LinkedInStage>([
   "third_followup",
 ]);
 
-export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
+export default function LinkedInView({
+  leads: initialLeads,
+  profiles,
+  dmTemplates,
+  avatarId,
+  dmProgress,
+}: Props) {
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
   const [stageFilter, setStageFilter] = useState<LinkedInStage | "all">("all");
@@ -176,6 +206,8 @@ export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
 
   return (
     <>
+      <GenerateDmBar avatarId={avatarId} initial={dmProgress} />
+
       <KpiBar kpis={kpis} />
 
       <LinkedInFunnel
@@ -221,6 +253,11 @@ export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
               <TableHead>Employees</TableHead>
               <TableHead>Website</TableHead>
               <TableHead>LinkedIn</TableHead>
+              {DM_SLOTS.map((s) => (
+                <TableHead key={s.slot} className="whitespace-nowrap">
+                  {s.label}
+                </TableHead>
+              ))}
               <TableHead>Stage</TableHead>
               <TableHead>Days since</TableHead>
               <TableHead>Qualified</TableHead>
@@ -230,7 +267,10 @@ export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
+                <TableCell
+                  colSpan={10 + DM_SLOTS.length}
+                  className="h-24 text-center text-muted-foreground"
+                >
                   No qualified leads with a LinkedIn URL.
                 </TableCell>
               </TableRow>
@@ -247,7 +287,24 @@ export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
                     className="cursor-pointer hover:bg-accent/40"
                     onClick={() => setOpenLeadId(lead.id)}
                   >
-                    <TableCell className="whitespace-nowrap">{first || "—"}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5">
+                        {first || "—"}
+                        {lead.linkedin_dm_flag && FLAG_LABEL[lead.linkedin_dm_flag] && (
+                          <span
+                            title={FLAG_LABEL[lead.linkedin_dm_flag].title}
+                            className={
+                              "rounded px-1 py-0.5 text-[10px] font-medium " +
+                              (lead.linkedin_dm_flag === "not_accounting"
+                                ? "bg-[var(--status-danger)]/15 text-[var(--status-danger)]"
+                                : "bg-[var(--bg-overlay)] text-[var(--text-tertiary)]")
+                            }
+                          >
+                            {FLAG_LABEL[lead.linkedin_dm_flag].text}
+                          </span>
+                        )}
+                      </span>
+                    </TableCell>
                     <TableCell className="whitespace-nowrap">{last || "—"}</TableCell>
                     <TableCell className="whitespace-nowrap">{lead.company ?? "—"}</TableCell>
                     <TableCell className="whitespace-nowrap">
@@ -283,6 +340,11 @@ export default function LinkedInView({ leads: initialLeads, profiles }: Props) {
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
+                    {DM_SLOTS.map((s) => (
+                      <TableCell key={s.slot} className="align-top">
+                        <DmCell state={dmFor(lead, dmTemplates, s.slot)} />
+                      </TableCell>
+                    ))}
                     <TableCell>
                       <StatusCell<LinkedInStage>
                         value={lead.linkedin_stage}

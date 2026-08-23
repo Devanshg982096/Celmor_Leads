@@ -92,6 +92,9 @@ export async function POST(req: Request) {
               enrichment_error: `Stuck >${Math.round(STUCK_AFTER_MS / 60000)} min — force failed by cron`,
               website_run_id: null,
               linkedin_run_id: null,
+              // Must be cleared too, or a retry polls a run from the previous
+              // attempt and finalizes against stale results.
+              linkedin_posts_run_id: null,
             })
             .eq("id", row.id);
           summary.forceFailed++;

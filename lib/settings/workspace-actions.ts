@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import type { WorkspaceSettings } from "@/lib/types";
+import type { LinkedInDmField, WorkspaceSettings } from "@/lib/types";
 
 export async function getWorkspaceSettings(): Promise<WorkspaceSettings | null> {
   const supabase = await createClient();
@@ -23,6 +23,25 @@ type UpdatableKey =
   | "anthropic_api_key"
   | "apify_token"
   | "icebreaker_prompt";
+
+/**
+ * Fields that must never be blanked. An empty API key means "clear it", but an
+ * empty prompt or message template would silently produce empty DMs, so those
+ * are rejected instead.
+ */
+const REQUIRED_TEXT_FIELDS = new Set<string>([
+  "icebreaker_prompt",
+  "linkedin_dm_prompt",
+  "linkedin_dm_template",
+]);
+
+const FIELD_LABELS: Record<string, string> = {
+  linkedin_dm_prompt: "Personalisation rules",
+  linkedin_dm_template: "First message",
+  linkedin_followup_1: "Follow-up 1",
+  linkedin_followup_2: "Follow-up 2",
+  linkedin_followup_3: "Follow-up 3",
+};
 
 export async function setCronEnabled(
   enabled: boolean,
@@ -54,16 +73,68 @@ export async function updateWorkspaceSetting(
 
   // Treat empty strings as clearing the key (but never clear the prompt).
   const next = value.trim();
-  if (key === "icebreaker_prompt" && next.length === 0) {
+  if (REQUIRED_TEXT_FIELDS.has(key) && next.length === 0) {
     return { error: "Icebreaker prompt can't be empty." };
   }
 
   const { error } = await supabase
     .from("workspace_settings")
     .update({
-      [key]: key === "icebreaker_prompt" ? next : next.length === 0 ? null : next,
+      [key]: REQUIRED_TEXT_FIELDS.has(key) ? next : next.length === 0 ? null : next,
       updated_at: new Date().toISOString(),
     })
+    .eq("id", 1);
+  if (error) return { error: error.message };
+
+  revalidatePath("/settings");
+  return { success: true };
+}
+
+/**
+ * Save the LinkedIn DM section in one round trip.
+ *
+ * Saving field-by-field would mean five sequential requests and a half-saved
+ * section if one failed partway. Everything is validated first, then written
+ * as a single update.
+ *
+ * A blank follow-up is allowed and meaningful: it means "don't send one".
+ * A blank first message or blank rules is refused, because either would
+ * silently generate empty DMs.
+ */
+export async function updateLinkedInDmSettings(
+  values: Partial<Record<LinkedInDmField, string>>,
+): Promise<{ error?: string; success?: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const patch: Record<string, string | null> = {};
+  for (const [key, raw] of Object.entries(values)) {
+    const next = (raw ?? "").trim();
+    if (REQUIRED_TEXT_FIELDS.has(key) && next.length === 0) {
+      return { error: `${FIELD_LABELS[key] ?? key} can't be empty.` };
+    }
+    patch[key] = next.length === 0 ? null : next;
+  }
+
+  if (Object.keys(patch).length === 0) return { success: true };
+
+  // The first message is the one place [OPENING] is load-bearing — without it
+  // the personalised paragraphs have nowhere to go and every lead would get
+  // the identical pitch.
+  const template = patch.linkedin_dm_template;
+  if (typeof template === "string" && !template.includes("[OPENING]")) {
+    return {
+      error:
+        "First message must contain [OPENING] — that's where the personalised paragraphs go.",
+    };
+  }
+
+  const { error } = await supabase
+    .from("workspace_settings")
+    .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", 1);
   if (error) return { error: error.message };
 

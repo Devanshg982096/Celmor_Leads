@@ -21,6 +21,12 @@ import {
   summariseLinkedInItems,
   type LinkedInProfile,
 } from "./linkedin";
+import {
+  LINKEDIN_POSTS_ACTOR_ID,
+  buildLinkedInPostsInput,
+  summariseLinkedInPosts,
+  type LinkedInPost,
+} from "./linkedin-posts";
 import { generateIcebreaker } from "./claude";
 
 // Codebase uses the un-parametrized SupabaseClient (see lib/leads/actions.ts).
@@ -62,8 +68,10 @@ export async function startEnrichment(
     return finalize(client, leadId, "Lead has neither a website nor a LinkedIn URL");
   }
 
-  // Kick off both runs in parallel. Each call returns in <2s with a run id.
-  const [websiteStart, linkedinStart] = await Promise.all([
+  // Kick off all three runs in parallel. Each call returns in <2s with a run
+  // id. Posts are a separate actor from the profile because no single scraper
+  // returns both.
+  const [websiteStart, linkedinStart, postsStart] = await Promise.all([
     websiteUrl
       ? startRun(WEBSITE_ACTOR_ID, buildWebsiteInput(websiteUrl), ws.apify_token).catch(
           (e) => ({ error: e instanceof Error ? e.message : String(e) }),
@@ -74,16 +82,26 @@ export async function startEnrichment(
           (e) => ({ error: e instanceof Error ? e.message : String(e) }),
         )
       : Promise.resolve(null),
+    linkedinUrl
+      ? startRun(
+          LINKEDIN_POSTS_ACTOR_ID,
+          buildLinkedInPostsInput(linkedinUrl),
+          ws.apify_token,
+        ).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }))
+      : Promise.resolve(null),
   ]);
 
   const websiteRunId = isRun(websiteStart) ? websiteStart.id : null;
   const linkedinRunId = isRun(linkedinStart) ? linkedinStart.id : null;
+  const postsRunId = isRun(postsStart) ? postsStart.id : null;
 
-  // If both attempts errored at start, surface the upstream errors immediately.
-  if (!websiteRunId && !linkedinRunId) {
+  // Only give up if nothing at all started. Posts failing to start is not
+  // fatal — profile and website alone still produce a usable message.
+  if (!websiteRunId && !linkedinRunId && !postsRunId) {
     const reasons: string[] = [];
     if (websiteUrl && websiteStart && "error" in websiteStart) reasons.push(`website: ${websiteStart.error}`);
     if (linkedinUrl && linkedinStart && "error" in linkedinStart) reasons.push(`linkedin: ${linkedinStart.error}`);
+    if (linkedinUrl && postsStart && "error" in postsStart) reasons.push(`posts: ${postsStart.error}`);
     return finalize(client, leadId, `Could not start any Apify run — ${reasons.join("; ")}`);
   }
 
@@ -96,6 +114,7 @@ export async function startEnrichment(
       enrichment_attempts: (lead.enrichment_attempts ?? 0) + 1,
       website_run_id: websiteRunId,
       linkedin_run_id: linkedinRunId,
+      linkedin_posts_run_id: postsRunId,
       // Keep prior results around until we have fresh ones.
     })
     .eq("id", leadId);
@@ -134,15 +153,22 @@ export async function finalizeEnrichment(
   if (!ws?.apify_token) return finalize(client, leadId, "Apify token not set in Settings");
   if (!ws.anthropic_api_key) return finalize(client, leadId, "Anthropic key not set in Settings");
 
-  const [websiteRun, linkedinRun] = await Promise.all([
+  // Needed to tell the lead's own posts from ones they reshared.
+  const linkedinUrl = pickLinkedIn(lead);
+
+  const [websiteRun, linkedinRun, postsRun] = await Promise.all([
     lead.website_run_id ? getRun(lead.website_run_id, ws.apify_token).catch(toErrorMeta) : null,
     lead.linkedin_run_id ? getRun(lead.linkedin_run_id, ws.apify_token).catch(toErrorMeta) : null,
+    lead.linkedin_posts_run_id
+      ? getRun(lead.linkedin_posts_run_id, ws.apify_token).catch(toErrorMeta)
+      : null,
   ]);
 
-  // If either run is still in progress, do nothing. The next poll will check again.
+  // If any run is still in progress, do nothing. The next poll will check again.
   const websiteDone = websiteRun === null || isTerminalMeta(websiteRun);
   const linkedinDone = linkedinRun === null || isTerminalMeta(linkedinRun);
-  if (!websiteDone || !linkedinDone) {
+  const postsDone = postsRun === null || isTerminalMeta(postsRun);
+  if (!websiteDone || !linkedinDone || !postsDone) {
     return { ok: true, status: "enriching" };
   }
 
@@ -157,13 +183,19 @@ export async function finalizeEnrichment(
     ws.apify_token,
     (items: LinkedInProfile[]) => summariseLinkedInItems(items),
   );
+  const postsSummary = await fetchSummary(
+    postsRun,
+    ws.apify_token,
+    (items: LinkedInPost[]) => summariseLinkedInPosts(items, linkedinUrl ?? ""),
+  );
 
-  if (!websiteSummary.summary && !linkedinSummary.summary) {
+  if (!websiteSummary.summary && !linkedinSummary.summary && !postsSummary.summary) {
     const reasons = [
       `website: ${websiteSummary.reason}`,
       `linkedin: ${linkedinSummary.reason}`,
+      `posts: ${postsSummary.reason}`,
     ];
-    return finalize(client, leadId, `Both sources empty — ${reasons.join("; ")}`);
+    return finalize(client, leadId, `All sources empty — ${reasons.join("; ")}`);
   }
 
   try {
@@ -185,6 +217,7 @@ export async function finalizeEnrichment(
       .update({
         website_summary: websiteSummary.summary,
         linkedin_summary: linkedinSummary.summary,
+        linkedin_posts_summary: postsSummary.summary,
         subject_line: subject,
         icebreaker,
         enriched_at: now,
@@ -192,6 +225,7 @@ export async function finalizeEnrichment(
         enrichment_error: null,
         website_run_id: null,
         linkedin_run_id: null,
+        linkedin_posts_run_id: null,
       })
       .eq("id", leadId);
     if (updateErr) return finalize(client, leadId, updateErr.message);
@@ -235,6 +269,7 @@ async function finalize(
       enrichment_error: errorMsg,
       website_run_id: null,
       linkedin_run_id: null,
+      linkedin_posts_run_id: null,
     })
     .eq("id", leadId);
   return { ok: false, error: errorMsg };

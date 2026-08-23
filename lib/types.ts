@@ -72,11 +72,40 @@ export interface LeadRow {
   smartlead_lead_id: string | null;
   website_run_id: string | null;
   linkedin_run_id: string | null;
+  /** Recent posts with dates and own-vs-reshared labelling. */
+  linkedin_posts_summary: string | null;
+  linkedin_posts_run_id: string | null;
   enrichment_started_at: string | null;
   enrichment_attempts: number;
   campaign_plan_id: string | null;
+  /**
+   * LinkedIn DM openings, written by Claude. These are the personalised part
+   * only — the fixed wording is applied at display time from
+   * workspace_settings, so changing the template updates every lead for free.
+   *
+   * null  = not generated yet
+   * ""    = generated, but there was nothing further worth saying; the fixed
+   *         text should stand alone rather than repeat an earlier message
+   */
+  linkedin_open_first: string | null;
+  linkedin_open_followup_1: string | null;
+  linkedin_open_followup_2: string | null;
+  linkedin_open_followup_3: string | null;
+  linkedin_dm_generated_at: string | null;
+  linkedin_dm_status: LinkedInDmStatus | null;
+  linkedin_dm_error: string | null;
+  /** Raised while writing: worth a look before sending. */
+  linkedin_dm_flag: LinkedInDmFlag | null;
   created_at: string;
 }
+
+export type LinkedInDmStatus = "pending" | "generating" | "done" | "failed";
+
+/** 'thin' = little to work with. 'not_accounting' = probably out of niche. */
+export type LinkedInDmFlag = "thin" | "not_accounting";
+
+/** The four LinkedIn messages, in send order. */
+export type LinkedInDmSlot = "first" | "followup_1" | "followup_2" | "followup_3";
 
 export type CampaignPlanStatus =
   | "draft"
@@ -104,9 +133,24 @@ export interface WorkspaceSettingsRow {
   anthropic_api_key: string | null;
   apify_token: string | null;
   icebreaker_prompt: string;
+  /** Rules Claude follows when writing the four LinkedIn openings. */
+  linkedin_dm_prompt: string | null;
+  /** Fixed first message. [NAME] and [OPENING] are substituted in. */
+  linkedin_dm_template: string | null;
+  linkedin_followup_1: string | null;
+  linkedin_followup_2: string | null;
+  linkedin_followup_3: string | null;
   cron_enabled: boolean;
   updated_at: string;
 }
+
+/** The five editable LinkedIn DM fields, as saved from Settings. */
+export type LinkedInDmField =
+  | "linkedin_dm_prompt"
+  | "linkedin_dm_template"
+  | "linkedin_followup_1"
+  | "linkedin_followup_2"
+  | "linkedin_followup_3";
 
 export interface ActivityLogRow {
   id: string;

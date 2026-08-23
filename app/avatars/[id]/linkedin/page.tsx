@@ -9,6 +9,8 @@ import {
   getChannelLeads,
   listAvatarsForSwitcher,
 } from "@/lib/avatars/channel-queries";
+import { getWorkspaceSettings } from "@/lib/settings/workspace-actions";
+import { getDmProgress } from "@/lib/leads/linkedin-dm-actions";
 import type { Avatar } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -33,12 +35,21 @@ export default async function LinkedInChannelPage({
   if (!avatarRow) notFound();
   const avatar = avatarRow as Avatar;
 
-  const [{ data: userData }, profiles, avatars] = await Promise.all([
+  const [{ data: userData }, profiles, avatars, ws, dmProgress] = await Promise.all([
     supabase.auth.getUser(),
     listProfiles(),
     listAvatarsForSwitcher(),
+    getWorkspaceSettings(),
+    getDmProgress(id),
   ]);
   const currentUserId = userData.user?.id ?? "";
+
+  const dmTemplates = {
+    first: ws?.linkedin_dm_template ?? "",
+    followup_1: ws?.linkedin_followup_1 ?? "",
+    followup_2: ws?.linkedin_followup_2 ?? "",
+    followup_3: ws?.linkedin_followup_3 ?? "",
+  };
 
   const leads = await getChannelLeads({
     avatarId: id,
@@ -77,7 +88,13 @@ export default async function LinkedInChannelPage({
         <ChannelTabs avatarId={id} />
       </div>
 
-      <LinkedInView leads={leads} profiles={profiles} />
+      <LinkedInView
+        leads={leads}
+        profiles={profiles}
+        dmTemplates={dmTemplates}
+        avatarId={id}
+        dmProgress={dmProgress}
+      />
     </AppShell>
   );
 }
