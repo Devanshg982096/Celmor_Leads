@@ -14,6 +14,14 @@ export interface ApifyRunMeta {
   id: string;
   status: ApifyRunStatus;
   defaultDatasetId: string;
+  /**
+   * What Apify actually charged for this run, in US dollars.
+   *
+   * Read rather than estimated because the three actors bill three different
+   * ways: per profile, per post, and by processing time. Only final once the
+   * run reaches a terminal status.
+   */
+  usageTotalUsd?: number;
 }
 
 const BASE = "https://api.apify.com/v2";
@@ -56,13 +64,19 @@ export async function getRun(runId: string, token: string): Promise<ApifyRunMeta
     throw new Error(`Apify getRun ${res.status}: ${(await res.text()).slice(0, 240)}`);
   }
   const body = (await res.json()) as {
-    data?: { id: string; status: ApifyRunStatus; defaultDatasetId: string };
+    data?: {
+      id: string;
+      status: ApifyRunStatus;
+      defaultDatasetId: string;
+      usageTotalUsd?: number;
+    };
   };
   if (!body.data) throw new Error("Apify getRun returned no data");
   return {
     id: body.data.id,
     status: body.data.status,
     defaultDatasetId: body.data.defaultDatasetId,
+    usageTotalUsd: body.data.usageTotalUsd,
   };
 }
 

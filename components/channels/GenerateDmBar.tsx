@@ -12,11 +12,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  generateDmBatch,
+  advanceDmRun,
   retryFailedDms,
   releaseStuckDms,
-  getDmPreflight,
-  type DmPreflight,
+  rewriteDms,
 } from "@/lib/leads/linkedin-dm-actions";
 import {
   DM_BATCH_SIZE,
@@ -129,11 +128,12 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
 
   const [batchSize, setBatchSize] = useState<number>(DM_BATCH_SIZE);
   const [runSize, setRunSize] = useState<number>(25);
-  const [preflight, setPreflight] = useState<DmPreflight | null>(null);
+  const [phase, setPhase] = useState<string>("");
 
-  // Usage accumulates across the batches of one run and resets when you start
-  // another, so the figure always answers "what has this run cost me".
+  // Spend accumulates across one run and resets when you start another, so the
+  // figure always answers "what has this run cost me".
   const [usage, setUsage] = useState<TokenUsage>(EMPTY_USAGE);
+  const [apifyUsd, setApifyUsd] = useState(0);
   const [writtenThisRun, setWrittenThisRun] = useState(0);
 
   // Free rows left claimed by a previous run that never finished.
@@ -141,27 +141,21 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
     void releaseStuckDms(avatarId);
   }, [avatarId]);
 
-  // Refresh the "what will this do" figures whenever the dials move.
-  useEffect(() => {
-    if (running) return;
-    let cancelled = false;
-    void getDmPreflight(avatarId, runSize).then((p) => {
-      if (!cancelled) setPreflight(p);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [avatarId, runSize, running, progress.written]);
-
   const run = useCallback(async () => {
     stop.current = false;
     setRunning(true);
     setErrors([]);
     setFatal(null);
     setUsage(EMPTY_USAGE);
+    setApifyUsd(0);
     setWrittenThisRun(0);
+    setPhase("Starting");
 
     let doneThisRun = 0;
+    // Scrapes take 30-90s at Apify. When a pass writes nothing because
+    // everything is still out being read, wait before asking again rather
+    // than spinning against the API.
+    let idlePasses = 0;
 
     try {
       for (;;) {
@@ -170,10 +164,11 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
         if (runSize > 0 && doneThisRun >= runSize) break;
 
         const room = runSize > 0 ? runSize - doneThisRun : batchSize;
-        const result = await generateDmBatch(avatarId, Math.min(batchSize, room));
+        const result = await advanceDmRun(avatarId, Math.min(batchSize, room));
 
         setProgress(result.progress);
         setUsage((u) => addUsage(u, result.usage));
+        setApifyUsd((c) => c + result.apifyUsd);
 
         if (result.fatal) {
           setFatal(result.fatal);
@@ -181,27 +176,49 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
         }
         if (result.errors.length) setErrors(result.errors);
 
-        doneThisRun += result.processed;
+        doneThisRun += result.written;
         setWrittenThisRun(doneThisRun);
 
-        // Every lead in the batch failed: almost always a dead API key or an
-        // empty account. Stop rather than burning through the whole list.
-        if (result.processed > 0 && result.succeeded === 0) {
-          setFatal(
-            result.errors[0]?.error ??
-              "Every lead in this batch failed. Stopped so the rest are not wasted.",
-          );
-          break;
+        setPhase(
+          result.written > 0
+            ? `Wrote ${result.written}`
+            : result.progress.scraping > 0
+              ? `Reading ${result.progress.scraping} profile${result.progress.scraping === 1 ? "" : "s"}`
+              : "Working",
+        );
+
+        if (!result.workRemains) break;
+
+        if (result.written === 0 && result.scrapesFinished === 0) {
+          idlePasses++;
+          // Nothing came back at all: give Apify time before the next look.
+          await new Promise((r) => setTimeout(r, Math.min(3000 * idlePasses, 12000)));
+          // A long stall with nothing in flight means it is stuck, not slow.
+          if (idlePasses > 12 && result.progress.scraping === 0) {
+            setFatal("Nothing progressed for a while. Stopped so it does not spin.");
+            break;
+          }
+        } else {
+          idlePasses = 0;
         }
-        if (result.processed === 0) break;
       }
     } catch (err) {
-      setFatal(err instanceof Error ? err.message : "Generation failed.");
+      setFatal(err instanceof Error ? err.message : "Run failed.");
     } finally {
       setRunning(false);
+      setPhase("");
       router.refresh();
     }
   }, [avatarId, batchSize, runSize, router]);
+
+  async function onRewrite(scope: "all" | "flagged" | "unscraped") {
+    const result = await rewriteDms(avatarId, scope);
+    if ("error" in result) {
+      setFatal(result.error);
+      return;
+    }
+    router.refresh();
+  }
 
   async function onRetryFailed() {
     const result = await retryFailedDms(avatarId);
@@ -216,7 +233,8 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
   }
 
   const { total, written, failed, remaining } = progress;
-  const spend = costOf(usage);
+  const aiSpend = costOf(usage);
+  const spend = aiSpend + apifyUsd;
   const perLead = writtenThisRun > 0 ? spend / writtenThisRun : 0;
   const cacheHitting = usage.cacheRead > 0;
 
@@ -242,10 +260,17 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
               {failed.toLocaleString("en-GB")} failed
             </p>
           )}
-          {!running && remaining > 0 && (
+          {running ? (
             <p className="text-[12px] text-[var(--text-tertiary)]">
-              {remaining.toLocaleString("en-GB")} still to do
+              {phase}
+              {progress.scraping > 0 && ` · ${progress.scraping} being read`}
             </p>
+          ) : (
+            remaining > 0 && (
+              <p className="text-[12px] text-[var(--text-tertiary)]">
+                {remaining.toLocaleString("en-GB")} still to do
+              </p>
+            )
           )}
         </div>
 
@@ -303,7 +328,7 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
           </Button>
         ) : (
           <Button size="sm" onClick={run} disabled={remaining === 0}>
-            {remaining === 0 ? "All messages written" : "Write messages"}
+            {remaining === 0 ? "All messages written" : "Read and write"}
           </Button>
         )}
 
@@ -325,26 +350,52 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
             <p className="text-[11px] text-[var(--text-tertiary)]">
               this run
               {perLead > 0 && ` · ${formatCost(perLead)}/lead`}
-              {cacheHitting && " · cached"}
+            </p>
+            <p className="text-[11px] text-[var(--text-tertiary)]">
+              AI {formatCost(aiSpend)}
+              {cacheHitting && " (cached)"} · scraping {formatCost(apifyUsd)}
             </p>
           </div>
         )}
       </div>
 
-      {/* What the run is about to do */}
-      {!running && preflight && preflight.willWrite > 0 && (
+      {/* Where the remaining leads actually are */}
+      {!running && remaining > 0 && (
         <p className="mt-2 text-[12px] text-[var(--text-secondary)]">
-          Next run writes {preflight.willWrite.toLocaleString("en-GB")} lead
-          {preflight.willWrite === 1 ? "" : "s"}, {batchSize} at a time.
-          {preflight.noMaterial > 0 && (
-            <span className="text-[var(--status-warning,var(--text-tertiary))]">
-              {" "}
-              {preflight.noMaterial.toLocaleString("en-GB")} of them have never
-              been scraped, so those messages will only have a job title and a
-              firm name to work from.
-            </span>
+          {progress.needScrape > 0 && (
+            <>
+              {progress.needScrape.toLocaleString("en-GB")} still need their
+              LinkedIn read.{" "}
+            </>
           )}
+          {progress.readyToWrite > 0 && (
+            <>
+              {progress.readyToWrite.toLocaleString("en-GB")} read already and
+              just need writing.{" "}
+            </>
+          )}
+          {progress.scraping > 0 && (
+            <>{progress.scraping.toLocaleString("en-GB")} still out being read. </>
+          )}
+          Runs {batchSize} at a time.
         </p>
+      )}
+
+      {/* Rewrite: the first leads through were written before their LinkedIn
+          was read, so their messages are worse than everything after. */}
+      {!running && written > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] text-[var(--text-tertiary)]">Rewrite:</span>
+          <Button size="sm" variant="ghost" onClick={() => onRewrite("unscraped")}>
+            Ones written before reading
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onRewrite("flagged")}>
+            Flagged ones
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onRewrite("all")}>
+            All {written.toLocaleString("en-GB")}
+          </Button>
+        </div>
       )}
 
       {fatal && (

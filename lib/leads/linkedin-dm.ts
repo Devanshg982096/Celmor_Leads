@@ -30,7 +30,24 @@ export interface DmProgress {
   written: number;
   failed: number;
   remaining: number;
+  /** Leads still needing their LinkedIn read before a message can be written. */
+  needScrape: number;
+  /** Leads whose scrapes are out at Apify right now. */
+  scraping: number;
+  /** Leads with material, waiting on a message. */
+  readyToWrite: number;
 }
+
+/** Both bills, kept apart because they are two different accounts. */
+export interface RunSpend {
+  anthropic: TokenUsage;
+  apifyUsd: number;
+}
+
+export const EMPTY_SPEND: RunSpend = {
+  anthropic: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+  apifyUsd: 0,
+};
 
 /* ─────────────────────────────── cost ─────────────────────────────────── */
 

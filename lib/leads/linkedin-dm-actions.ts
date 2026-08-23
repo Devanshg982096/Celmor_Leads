@@ -7,6 +7,7 @@ import {
   hasScrapedMaterial,
   type DmSource,
 } from "@/lib/enrichment/linkedin-dm-writer";
+import { startLeadScrape, pollLeadScrape } from "@/lib/enrichment/linkedin-scrape";
 import { getLeadValue } from "@/lib/leads-columns";
 import {
   DM_BATCH_SIZE,
@@ -83,16 +84,40 @@ export async function getDmProgress(avatarId: string): Promise<DmProgress> {
       .eq("qualified", "qualified")
       .not("linkedin_url", "is", null);
 
-  const [{ count: total }, { count: written }, { count: failed }] = await Promise.all([
+  const [
+    { count: total },
+    { count: written },
+    { count: failed },
+    { count: scraping },
+    { count: readyToWrite },
+  ] = await Promise.all([
     base(),
     base().not("linkedin_open_first", "is", null),
     base().eq("linkedin_dm_status", "failed"),
+    base().eq("enrichment_status", "enriching"),
+    // Has been read and is waiting on a message.
+    base()
+      .is("linkedin_open_first", null)
+      .is("linkedin_dm_status", null)
+      .not("linkedin_summary", "is", null),
   ]);
 
   const t = total ?? 0;
   const w = written ?? 0;
   const f = failed ?? 0;
-  return { total: t, written: w, failed: f, remaining: Math.max(0, t - w - f) };
+  const s = scraping ?? 0;
+  const r = readyToWrite ?? 0;
+  const remaining = Math.max(0, t - w - f);
+
+  return {
+    total: t,
+    written: w,
+    failed: f,
+    remaining,
+    scraping: s,
+    readyToWrite: r,
+    needScrape: Math.max(0, remaining - s - r),
+  };
 }
 
 function toSource(lead: Lead): DmSource {
@@ -301,6 +326,220 @@ export async function retryFailedDms(
   if (error) return { error: error.message };
   revalidatePath(`/avatars/${avatarId}/linkedin`);
   return { reset: (data ?? []).length };
+}
+
+export interface RunStepResult {
+  /** Scrapes kicked off this pass. */
+  scrapesStarted: number;
+  /** Leads whose scrapes came back and were saved this pass. */
+  scrapesFinished: number;
+  written: number;
+  failed: number;
+  progress: DmProgress;
+  usage: TokenUsage;
+  apifyUsd: number;
+  errors: { name: string; error: string }[];
+  fatal?: string;
+  /** False when there is genuinely nothing left to do. */
+  workRemains: boolean;
+}
+
+const SCRAPE_SELECT = `id, name, title, company, raw_data, linkedin_url,
+  website_summary, linkedin_summary, linkedin_posts_summary,
+  website_run_id, linkedin_run_id, linkedin_posts_run_id,
+  enrichment_status, enrichment_attempts, linkedin_open_first, linkedin_dm_status`;
+
+/**
+ * One slice of a run: collect finished scrapes, start new ones, write anything
+ * that is ready.
+ *
+ * All three happen in the same call so the work pipelines. While one batch is
+ * out at Apify being read, the previous batch is being written. Each call
+ * stays short, which is what keeps a 388 lead run alive across a serverless
+ * host's request timeout. The client repeats it until workRemains is false.
+ */
+export async function advanceDmRun(
+  avatarId: string,
+  batchSize?: number,
+): Promise<RunStepResult> {
+  const size = clampBatchSize(batchSize);
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const empty = async (fatal?: string): Promise<RunStepResult> => ({
+    scrapesStarted: 0,
+    scrapesFinished: 0,
+    written: 0,
+    failed: 0,
+    progress: await getDmProgress(avatarId),
+    usage: EMPTY_USAGE,
+    apifyUsd: 0,
+    errors: [],
+    fatal,
+    workRemains: false,
+  });
+
+  if (!user) return empty("Not authenticated.");
+
+  const { data: wsRow } = await supabase
+    .from("workspace_settings")
+    .select("apify_token, anthropic_api_key")
+    .eq("id", 1)
+    .maybeSingle();
+  const token = wsRow?.apify_token as string | null;
+  if (!token) return empty("No Apify token saved in Settings.");
+  if (!wsRow?.anthropic_api_key) return empty("No Anthropic API key saved in Settings.");
+
+  const scopeLeads = () =>
+    supabase
+      .from("leads")
+      .select(SCRAPE_SELECT)
+      .eq("avatar_id", avatarId)
+      .eq("qualified", "qualified")
+      .not("linkedin_url", "is", null);
+
+  const errors: { name: string; error: string }[] = [];
+  let apifyUsd = 0;
+  let scrapesFinished = 0;
+  let scrapesStarted = 0;
+
+  // 1. Collect anything Apify has finished. Done first so those leads become
+  //    writable in this same pass rather than waiting for the next one.
+  const { data: inFlight } = await scopeLeads()
+    .eq("enrichment_status", "enriching")
+    .limit(size * 3);
+
+  for (const row of (inFlight ?? []) as unknown as Lead[]) {
+    try {
+      const outcome = await pollLeadScrape(row, supabase, token);
+      apifyUsd += outcome.costUsd;
+      if (outcome.finished) scrapesFinished++;
+    } catch (e) {
+      errors.push({
+        name: row.name,
+        error: (e instanceof Error ? e.message : String(e)).slice(0, 200),
+      });
+    }
+  }
+
+  // 2. Start scrapes for leads that still have nothing, keeping about two
+  //    batches in flight so Apify is always working while we write.
+  const { count: nowScraping } = await supabase
+    .from("leads")
+    .select("*", { count: "exact", head: true })
+    .eq("avatar_id", avatarId)
+    .eq("enrichment_status", "enriching");
+
+  const room = Math.max(0, size * 2 - (nowScraping ?? 0));
+  if (room > 0) {
+    const { data: toScrape } = await scopeLeads()
+      .is("linkedin_open_first", null)
+      .is("linkedin_dm_status", null)
+      .is("linkedin_summary", null)
+      .is("enrichment_status", null)
+      .order("created_at", { ascending: true })
+      .limit(room);
+
+    for (const row of (toScrape ?? []) as unknown as Lead[]) {
+      const result = await startLeadScrape(row, supabase, token);
+      if (result.started > 0) scrapesStarted++;
+      else if (result.error) errors.push({ name: row.name, error: result.error });
+    }
+  }
+
+  // 3. Write messages for anything that now has material.
+  const batch = await generateDmBatch(avatarId, size);
+
+  const progress = await getDmProgress(avatarId);
+  const workRemains =
+    progress.remaining > 0 &&
+    (progress.needScrape > 0 || progress.scraping > 0 || progress.readyToWrite > 0);
+
+  return {
+    scrapesStarted,
+    scrapesFinished,
+    written: batch.succeeded,
+    failed: batch.failed,
+    progress,
+    usage: batch.usage,
+    apifyUsd,
+    errors: [...errors, ...batch.errors].slice(0, 3),
+    fatal: batch.fatal,
+    workRemains,
+  };
+}
+
+/**
+ * Clear the messages on leads so the next run writes them again.
+ *
+ * Needed because the first leads through were written before their LinkedIn
+ * had been read, so their messages are built from a job title alone. Without
+ * this they would stay permanently worse than everything written after them.
+ */
+export async function rewriteDms(
+  avatarId: string,
+  scope: "all" | "flagged" | "unscraped",
+): Promise<{ reset: number } | { error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  // Deliberately a lookup followed by an update, rather than one filtered
+  // update. Choosing between filter chains and then updating produces a union
+  // of Supabase builder types deep enough that the compiler gives up with
+  // "type instantiation is excessively deep". Each branch below is its own
+  // complete, awaited query, so nothing has to be unified.
+  const ids = await (async (): Promise<string[]> => {
+    if (scope === "flagged") {
+      const { data } = await supabase
+        .from("leads")
+        .select("id")
+        .eq("avatar_id", avatarId)
+        .not("linkedin_open_first", "is", null)
+        .not("linkedin_dm_flag", "is", null);
+      return (data ?? []).map((r) => r.id as string);
+    }
+    if (scope === "unscraped") {
+      // Written before their LinkedIn was ever read: the ones worth redoing.
+      const { data } = await supabase
+        .from("leads")
+        .select("id")
+        .eq("avatar_id", avatarId)
+        .not("linkedin_open_first", "is", null)
+        .is("linkedin_summary", null);
+      return (data ?? []).map((r) => r.id as string);
+    }
+    const { data } = await supabase
+      .from("leads")
+      .select("id")
+      .eq("avatar_id", avatarId)
+      .not("linkedin_open_first", "is", null);
+    return (data ?? []).map((r) => r.id as string);
+  })();
+
+  if (ids.length === 0) return { reset: 0 };
+
+  const { error } = await supabase
+    .from("leads")
+    .update({
+      linkedin_open_first: null,
+      linkedin_open_followup_1: null,
+      linkedin_open_followup_2: null,
+      linkedin_open_followup_3: null,
+      linkedin_dm_status: null,
+      linkedin_dm_error: null,
+      linkedin_dm_flag: null,
+      linkedin_dm_generated_at: null,
+    })
+    .in("id", ids);
+  if (error) return { error: error.message };
+
+  revalidatePath(`/avatars/${avatarId}/linkedin`);
+  return { reset: ids.length };
 }
 
 /**
