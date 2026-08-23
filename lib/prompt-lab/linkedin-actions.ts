@@ -173,7 +173,9 @@ export async function previewLinkedInDmAction(
   };
 
   try {
-    const result = await writeLinkedInDm(source, rules, apiKey);
+    // Pass the wording being previewed, unsaved edits included, so the lines
+    // are written to fit the text you are currently looking at.
+    const result = await writeLinkedInDm(source, rules, templates, apiKey);
 
     const openings: Record<LinkedInDmSlot, string> = {
       first: result.first,

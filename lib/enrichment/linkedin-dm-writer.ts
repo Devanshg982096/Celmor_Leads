@@ -26,18 +26,75 @@ export interface DmResult {
   isAccountingFirm: boolean;
 }
 
+/** The fixed wording each opening is dropped into, straight from Settings. */
+export interface DmTemplateSet {
+  first: string;
+  followup_1: string;
+  followup_2: string;
+  followup_3: string;
+}
+
+const SLOT_TITLES: Record<keyof DmTemplateSet, string> = {
+  first: "FIRST MESSAGE",
+  followup_1: "FOLLOW-UP 1 (sent when the first message got no reply)",
+  followup_2: "FOLLOW-UP 2 (still no reply)",
+  followup_3: "FOLLOW-UP 3 (final one, still no reply)",
+};
+
+/**
+ * Show the model the actual message each line lands in.
+ *
+ * Without this it writes the follow-up lines blind — a standalone observation
+ * that then collides with whatever fixed sentence follows it. Seeing the real
+ * text is what lets it write a line that hands off into the next one.
+ */
+function renderTemplates(templates: DmTemplateSet, firstName: string): string {
+  const blocks = (Object.keys(SLOT_TITLES) as (keyof DmTemplateSet)[])
+    .map((slot) => {
+      const raw = (templates[slot] ?? "").trim();
+      if (!raw) return `=== ${SLOT_TITLES[slot]} ===\n(not in use — return "" for ${slot})`;
+      const shown = raw
+        .replace(/\[NAME\]/g, firstName)
+        .replace(/\[OPENING\]/g, `>>>>> YOUR "${slot}" TEXT GOES HERE <<<<<`);
+      return `=== ${SLOT_TITLES[slot]} ===\n${shown}`;
+    })
+    .join("\n\n");
+
+  return `THE FOUR MESSAGES YOU ARE WRITING INTO\n\n${blocks}`;
+}
+
 /**
  * The output contract lives in code, not in the editable prompt.
  *
- * Sahil can rewrite the writing rules in Settings freely without breaking
- * parsing — if the shape were part of that text, an innocent edit would take
- * the whole batch down.
+ * Sahil can rewrite the writing rules freely without breaking parsing — if the
+ * shape were part of that text, an innocent edit would take the whole batch
+ * down.
  */
-const CONTRACT = `
-OUTPUT CONTRACT (this section is fixed and overrides anything above about output format)
+function buildContract(templates: DmTemplateSet, firstName: string): string {
+  return `
+${renderTemplates(templates, firstName)}
+
+HOW YOUR LINES MUST FIT (fixed; overrides anything above about output format)
+
+Read the fixed wording above before writing anything. Each line you write is
+dropped in where marked and must run straight on into the sentence beneath it,
+so the finished message reads as one person writing one message. A line that
+could be deleted without the message changing is a failed line.
+
+THE FOLLOW-UPS ARE FOLLOW-UPS, NOT NEW MESSAGES
+Messages 2, 3 and 4 go to someone who read the previous one and did not reply.
+Write them as somebody circling back, not as a fresh introduction:
+  - never re-introduce yourself or the offer
+  - never reuse a detail already used in an earlier message
+  - do not open with a new standalone compliment or observation, because the
+    fixed sentence that follows assumes an unanswered message, not an opener
+  - a good follow-up line reads like the next sentence in a conversation the
+    reader has been ignoring, and hands off naturally to the fixed text
+Phrases that carry that continuity well: "Still think...", "Came back to
+this because...", "For what it's worth...". Use your own words, not these.
 
 Return an object with exactly these six fields:
-  first        - the two-paragraph opening for the first message
+  first        - the opening for the first message
   followup_1   - one short line, or "" if there is nothing further worth saying
   followup_2   - one short line, or ""
   followup_3   - one short line, or ""
@@ -50,11 +107,12 @@ Return an object with exactly these six fields:
                  rather than working as one.
 
 Write the personalised part only. Never write a greeting, a sign-off, or any
-of the pitch: those are added afterwards.
+of the pitch: those are already in the fixed wording above.
 
 An empty followup is correct and expected when the source material only
-supports one good observation. Repeating the same detail across four messages
-is worse than saying nothing.`;
+supports one good observation. The fixed text still reads properly on its own,
+so silence is better than repeating yourself.`;
+}
 
 /** Guarantees valid JSON back, so a batch can't die on a stray markdown fence. */
 const SCHEMA = {
@@ -126,8 +184,11 @@ export function hasScrapedMaterial(s: DmSource): boolean {
 export async function writeLinkedInDm(
   source: DmSource,
   writingRules: string,
+  templates: DmTemplateSet,
   apiKey: string,
 ): Promise<DmResult> {
+  const firstName = source.name.trim().split(/\s+/)[0] ?? source.name;
+
   const res = await fetch(ANTHROPIC_URL, {
     method: "POST",
     headers: {
@@ -138,7 +199,7 @@ export async function writeLinkedInDm(
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 2000,
-      system: `${writingRules.trim()}\n\n${CONTRACT}`,
+      system: `${writingRules.trim()}\n\n${buildContract(templates, firstName)}`,
       // Medium keeps a batch of hundreds affordable without making the lines
       // noticeably worse; this is a writing task, not a reasoning one.
       output_config: {

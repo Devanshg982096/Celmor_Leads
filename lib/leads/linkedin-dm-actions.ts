@@ -89,12 +89,21 @@ export async function generateDmBatch(avatarId: string): Promise<BatchResult> {
 
   const { data: wsRow } = await supabase
     .from("workspace_settings")
-    .select("anthropic_api_key, linkedin_dm_prompt")
+    .select(
+      "anthropic_api_key, linkedin_dm_prompt, linkedin_dm_template, linkedin_followup_1, linkedin_followup_2, linkedin_followup_3",
+    )
     .eq("id", 1)
     .maybeSingle();
 
   const apiKey = wsRow?.anthropic_api_key as string | null;
   const rules = wsRow?.linkedin_dm_prompt as string | null;
+  // The model is shown the fixed wording so each line runs on into it.
+  const templates = {
+    first: (wsRow?.linkedin_dm_template as string | null) ?? "",
+    followup_1: (wsRow?.linkedin_followup_1 as string | null) ?? "",
+    followup_2: (wsRow?.linkedin_followup_2 as string | null) ?? "",
+    followup_3: (wsRow?.linkedin_followup_3 as string | null) ?? "",
+  };
 
   const progressNow = await getDmProgress(avatarId);
   if (!apiKey) {
@@ -137,7 +146,7 @@ export async function generateDmBatch(avatarId: string): Promise<BatchResult> {
   const results = await Promise.allSettled(
     batch.map(async (lead) => {
       const source = toSource(lead);
-      const result = await writeLinkedInDm(source, rules, apiKey);
+      const result = await writeLinkedInDm(source, rules, templates, apiKey);
       return { lead, source, result };
     }),
   );
