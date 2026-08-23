@@ -35,6 +35,16 @@ export interface AvatarRow {
   source: string;
   visible_columns: string[];
   total_leads: number;
+  /**
+   * A LinkedIn DM run in progress. Recorded here rather than only in the
+   * browser so a scheduled worker can carry it on once the tab is closed.
+   */
+  dm_run_active: boolean;
+  dm_run_batch_size: number;
+  /** Messages to stop at; null means until the campaign is finished. */
+  dm_run_target: number | null;
+  dm_run_started_at: string | null;
+  dm_run_started_by: string | null;
 }
 
 export interface LeadRow {

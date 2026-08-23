@@ -16,6 +16,10 @@ import {
   retryFailedDms,
   releaseStuckDms,
   rewriteDms,
+  startRun,
+  stopRun,
+  getRunState,
+  getDmProgress,
 } from "@/lib/leads/linkedin-dm-actions";
 import {
   DM_BATCH_SIZE,
@@ -136,9 +140,26 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
   const [apifyUsd, setApifyUsd] = useState(0);
   const [writtenThisRun, setWrittenThisRun] = useState(0);
 
-  // Free rows left claimed by a previous run that never finished.
+  // Free rows left claimed by a run that stopped abruptly.
   useEffect(() => {
     void releaseStuckDms(avatarId);
+  }, [avatarId]);
+
+  // A run started here carries on server-side after the tab closes, so on
+  // arrival rejoin one already in progress rather than showing it as idle.
+  useEffect(() => {
+    let cancelled = false;
+    void getRunState(avatarId).then((state) => {
+      if (cancelled || !state.active) return;
+      setBatchSize(state.batchSize);
+      void run();
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Deliberately only on mount: re-running this on every render would
+    // restart the loop endlessly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [avatarId]);
 
   const run = useCallback(async () => {
@@ -211,6 +232,22 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
     }
   }, [avatarId, batchSize, runSize, router]);
 
+  /** Record the run server-side first, so closing the tab does not end it. */
+  async function onStart() {
+    const result = await startRun(avatarId, batchSize, runSize);
+    if ("error" in result) {
+      setFatal(result.error);
+      return;
+    }
+    void run();
+  }
+
+  async function onStop() {
+    stop.current = true;
+    await stopRun(avatarId);
+    setProgress(await getDmProgress(avatarId));
+  }
+
   async function onRewrite(scope: "all" | "flagged" | "unscraped") {
     const result = await rewriteDms(avatarId, scope);
     if ("error" in result) {
@@ -261,10 +298,15 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
             </p>
           )}
           {running ? (
-            <p className="text-[12px] text-[var(--text-tertiary)]">
-              {phase}
-              {progress.scraping > 0 && ` · ${progress.scraping} being read`}
-            </p>
+            <>
+              <p className="text-[12px] text-[var(--text-tertiary)]">
+                {phase}
+                {progress.scraping > 0 && ` · ${progress.scraping} being read`}
+              </p>
+              <p className="text-[11px] text-[var(--text-tertiary)]">
+                Keeps going if you close this
+              </p>
+            </>
           ) : (
             remaining > 0 && (
               <p className="text-[12px] text-[var(--text-tertiary)]">
@@ -317,17 +359,11 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
         </div>
 
         {running ? (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              stop.current = true;
-            }}
-          >
+          <Button size="sm" variant="outline" onClick={onStop}>
             Stop
           </Button>
         ) : (
-          <Button size="sm" onClick={run} disabled={remaining === 0}>
+          <Button size="sm" onClick={onStart} disabled={remaining === 0}>
             {remaining === 0 ? "All messages written" : "Read and write"}
           </Button>
         )}

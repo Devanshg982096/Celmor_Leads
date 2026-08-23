@@ -36,6 +36,7 @@ export async function proxy(request: NextRequest) {
   // get a 307 to /login and the handler never runs.
   const isPublicApi =
     pathname.startsWith("/api/enrich/tick") ||
+    pathname.startsWith("/api/linkedin-dm/tick") ||
     pathname.startsWith("/api/smartlead/sync") ||
     // Netlify scheduled functions get invoked at /.netlify/functions/<name>.
     // Without this carve-out the middleware was redirecting Netlify's own

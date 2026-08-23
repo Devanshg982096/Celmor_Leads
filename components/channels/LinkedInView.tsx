@@ -15,6 +15,10 @@ import QualifiedCell from "@/components/leads/QualifiedCell";
 import LeadDetailDrawer from "@/components/leads/LeadDetailDrawer";
 import DmCell from "@/components/leads/DmCell";
 import GenerateDmBar from "@/components/channels/GenerateDmBar";
+import ColumnPicker, {
+  useVisibleColumns,
+  type ColumnDef,
+} from "@/components/channels/ColumnPicker";
 import {
   DM_SLOTS,
   dmFor,
@@ -111,6 +115,21 @@ const REPLIED_STAGES = new Set<LinkedInStage>([
   "third_followup",
 ]);
 
+/** Everything hideable in this table, in display order. */
+const COLUMNS: ColumnDef[] = [
+  { key: "first_name", label: "First Name", locked: true },
+  { key: "last_name", label: "Last Name" },
+  { key: "company", label: "Company" },
+  ...DM_SLOTS.map((s) => ({ key: `dm_${s.slot}`, label: s.label })),
+  { key: "employees", label: "Employees" },
+  { key: "website", label: "Website" },
+  { key: "linkedin", label: "LinkedIn" },
+  { key: "stage", label: "Stage" },
+  { key: "days_since", label: "Days since" },
+  { key: "qualified", label: "Qualified" },
+  { key: "owner", label: "Owner" },
+];
+
 export default function LinkedInView({
   leads: initialLeads,
   profiles,
@@ -122,6 +141,10 @@ export default function LinkedInView({
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
   const [stageFilter, setStageFilter] = useState<LinkedInStage | "all">("all");
   const [msgFilter, setMsgFilter] = useState<"all" | "written" | "not_written" | "flagged">("all");
+  const { isVisible, toggle, showAll, hiddenCount } = useVisibleColumns(
+    "narada-linkedin-columns",
+    COLUMNS,
+  );
 
   const optimisticPatch = useCallback(
     async (leadId: string, patch: Partial<Lead>, run: () => Promise<void>) => {
@@ -280,36 +303,43 @@ export default function LinkedInView({
         >
           {visible.length.toLocaleString("en-GB")} of {qualifiedLeads.length.toLocaleString("en-GB")} leads
         </p>
+        <ColumnPicker
+          columns={COLUMNS}
+          isVisible={isVisible}
+          toggle={toggle}
+          showAll={showAll}
+          hiddenCount={hiddenCount}
+        />
       </div>
 
       <div className="rounded-md border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>First Name</TableHead>
-              <TableHead>Last Name</TableHead>
-              <TableHead>Company</TableHead>
+              {isVisible("first_name") && <TableHead>First Name</TableHead>}
+              {isVisible("last_name") && <TableHead>Last Name</TableHead>}
+              {isVisible("company") && <TableHead>Company</TableHead>}
               {/* The messages are the point of this tab, so they sit before
                   the firmographics rather than off the right-hand edge. */}
-              {DM_SLOTS.map((s) => (
+              {DM_SLOTS.filter((s) => isVisible(`dm_${s.slot}`)).map((s) => (
                 <TableHead key={s.slot} className="whitespace-nowrap">
                   {s.label}
                 </TableHead>
               ))}
-              <TableHead>Employees</TableHead>
-              <TableHead>Website</TableHead>
-              <TableHead>LinkedIn</TableHead>
-              <TableHead>Stage</TableHead>
-              <TableHead>Days since</TableHead>
-              <TableHead>Qualified</TableHead>
-              <TableHead>Owner</TableHead>
+              {isVisible("employees") && <TableHead>Employees</TableHead>}
+              {isVisible("website") && <TableHead>Website</TableHead>}
+              {isVisible("linkedin") && <TableHead>LinkedIn</TableHead>}
+              {isVisible("stage") && <TableHead>Stage</TableHead>}
+              {isVisible("days_since") && <TableHead>Days since</TableHead>}
+              {isVisible("qualified") && <TableHead>Qualified</TableHead>}
+              {isVisible("owner") && <TableHead>Owner</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={10 + DM_SLOTS.length}
+                  colSpan={COLUMNS.filter((c) => isVisible(c.key)).length}
                   className="h-24 text-center text-muted-foreground"
                 >
                   No qualified leads with a LinkedIn URL.
@@ -328,127 +358,147 @@ export default function LinkedInView({
                     className="cursor-pointer hover:bg-accent/40"
                     onClick={() => setOpenLeadId(lead.id)}
                   >
-                    <TableCell className="whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5">
-                        {first || "—"}
-                        {lead.linkedin_dm_flag && FLAG_LABEL[lead.linkedin_dm_flag] && (
-                          <span
-                            title={FLAG_LABEL[lead.linkedin_dm_flag].title}
-                            className={
-                              "rounded px-1 py-0.5 text-[10px] font-medium " +
-                              (lead.linkedin_dm_flag === "not_accounting"
-                                ? "bg-[var(--status-danger)]/15 text-[var(--status-danger)]"
-                                : "bg-[var(--bg-overlay)] text-[var(--text-tertiary)]")
-                            }
-                          >
-                            {FLAG_LABEL[lead.linkedin_dm_flag].text}
-                          </span>
-                        )}
-                      </span>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">{last || "—"}</TableCell>
-                    <TableCell className="whitespace-nowrap">{lead.company ?? "—"}</TableCell>
-                    {DM_SLOTS.map((s) => (
+                    {isVisible("first_name") && (
+                      <TableCell className="whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5">
+                          {first || "—"}
+                          {lead.linkedin_dm_flag && FLAG_LABEL[lead.linkedin_dm_flag] && (
+                            <span
+                              title={FLAG_LABEL[lead.linkedin_dm_flag].title}
+                              className={
+                                "rounded px-1 py-0.5 text-[10px] font-medium " +
+                                (lead.linkedin_dm_flag === "not_accounting"
+                                  ? "bg-[var(--status-danger)]/15 text-[var(--status-danger)]"
+                                  : "bg-[var(--bg-overlay)] text-[var(--text-tertiary)]")
+                              }
+                            >
+                              {FLAG_LABEL[lead.linkedin_dm_flag].text}
+                            </span>
+                          )}
+                        </span>
+                      </TableCell>
+                    )}
+                    {isVisible("last_name") && (
+                      <TableCell className="whitespace-nowrap">{last || "—"}</TableCell>
+                    )}
+                    {isVisible("company") && (
+                      <TableCell className="whitespace-nowrap">{lead.company ?? "—"}</TableCell>
+                    )}
+                    {DM_SLOTS.filter((s) => isVisible(`dm_${s.slot}`)).map((s) => (
                       <TableCell key={s.slot} className="align-top">
                         <DmCell state={dmFor(lead, dmTemplates, s.slot)} />
                       </TableCell>
                     ))}
-                    <TableCell className="whitespace-nowrap">
-                      {employees || <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {website ? (
-                        <a
-                          href={website.startsWith("http") ? website : `https://${website}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary underline-offset-2 hover:underline"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          Site ↗
-                        </a>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {lead.linkedin_url ? (
-                        <a
-                          href={lead.linkedin_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary underline-offset-2 hover:underline"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          Profile ↗
-                        </a>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <StatusCell<LinkedInStage>
-                        value={lead.linkedin_stage}
-                        options={LINKEDIN_STAGE_OPTIONS}
-                        variantFor={LINKEDIN_STAGE_BADGE}
-                        onChange={(next) =>
-                          optimisticPatch(
-                            lead.id,
-                            {
-                              linkedin_stage: next,
-                              linkedin_stage_updated_at: new Date().toISOString(),
-                            },
-                            () => updateLinkedInStage(lead.id, next),
-                          )
-                        }
-                      />
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                      {lead.linkedin_stage === "none"
-                        ? "—"
-                        : relativeTime(lead.linkedin_stage_updated_at)}
-                    </TableCell>
-                    <TableCell>
-                      <QualifiedCell
-                        qualified={lead.qualified}
-                        reason={lead.unqualified_reason}
-                        unqualifiedAt={lead.unqualified_at}
-                        onUnqualify={(reason: UnqualifiedReason) =>
-                          optimisticPatch(
-                            lead.id,
-                            {
-                              qualified: "unqualified",
-                              unqualified_reason: reason,
-                              unqualified_at: new Date().toISOString(),
-                            },
-                            () => unqualifyLead(lead.id, reason),
-                          )
-                        }
-                        onRequalify={() =>
-                          optimisticPatch(
-                            lead.id,
-                            {
-                              qualified: "qualified",
-                              unqualified_reason: null,
-                              unqualified_at: null,
-                              unqualified_by: null,
-                            },
-                            () => requalifyLead(lead.id),
-                          )
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <OwnerCell
-                        ownerId={lead.owner_id}
-                        profiles={profiles}
-                        onChange={(next) =>
-                          optimisticPatch(lead.id, { owner_id: next }, () =>
-                            updateLeadOwner(lead.id, next),
-                          )
-                        }
-                      />
-                    </TableCell>
+                    {isVisible("employees") && (
+                      <TableCell className="whitespace-nowrap">
+                        {employees || <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                    )}
+                    {isVisible("website") && (
+                      <TableCell className="whitespace-nowrap">
+                        {website ? (
+                          <a
+                            href={website.startsWith("http") ? website : `https://${website}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary underline-offset-2 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            Site ↗
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    )}
+                    {isVisible("linkedin") && (
+                      <TableCell className="whitespace-nowrap">
+                        {lead.linkedin_url ? (
+                          <a
+                            href={lead.linkedin_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary underline-offset-2 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            Profile ↗
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    )}
+                    {isVisible("stage") && (
+                      <TableCell>
+                        <StatusCell<LinkedInStage>
+                          value={lead.linkedin_stage}
+                          options={LINKEDIN_STAGE_OPTIONS}
+                          variantFor={LINKEDIN_STAGE_BADGE}
+                          onChange={(next) =>
+                            optimisticPatch(
+                              lead.id,
+                              {
+                                linkedin_stage: next,
+                                linkedin_stage_updated_at: new Date().toISOString(),
+                              },
+                              () => updateLinkedInStage(lead.id, next),
+                            )
+                          }
+                        />
+                      </TableCell>
+                    )}
+                    {isVisible("days_since") && (
+                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                        {lead.linkedin_stage === "none"
+                          ? "—"
+                          : relativeTime(lead.linkedin_stage_updated_at)}
+                      </TableCell>
+                    )}
+                    {isVisible("qualified") && (
+                      <TableCell>
+                        <QualifiedCell
+                          qualified={lead.qualified}
+                          reason={lead.unqualified_reason}
+                          unqualifiedAt={lead.unqualified_at}
+                          onUnqualify={(reason: UnqualifiedReason) =>
+                            optimisticPatch(
+                              lead.id,
+                              {
+                                qualified: "unqualified",
+                                unqualified_reason: reason,
+                                unqualified_at: new Date().toISOString(),
+                              },
+                              () => unqualifyLead(lead.id, reason),
+                            )
+                          }
+                          onRequalify={() =>
+                            optimisticPatch(
+                              lead.id,
+                              {
+                                qualified: "qualified",
+                                unqualified_reason: null,
+                                unqualified_at: null,
+                                unqualified_by: null,
+                              },
+                              () => requalifyLead(lead.id),
+                            )
+                          }
+                        />
+                      </TableCell>
+                    )}
+                    {isVisible("owner") && (
+                      <TableCell>
+                        <OwnerCell
+                          ownerId={lead.owner_id}
+                          profiles={profiles}
+                          onChange={(next) =>
+                            optimisticPatch(lead.id, { owner_id: next }, () =>
+                              updateLeadOwner(lead.id, next),
+                            )
+                          }
+                        />
+                      </TableCell>
+                    )}
                   </TableRow>
                 );
               })
