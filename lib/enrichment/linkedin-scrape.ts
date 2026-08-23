@@ -70,6 +70,22 @@ export function pickLinkedIn(lead: Lead): string | null {
   return null;
 }
 
+/**
+ * Is this Apify saying something is wrong with the ACCOUNT, rather than with
+ * this particular lead?
+ *
+ * The distinction matters a lot. A lead-level failure means skip it and carry
+ * on; an account-level one means every remaining lead will fail identically.
+ * Treating "monthly usage hard limit exceeded" as a per-lead problem marked
+ * 165 leads permanently broken in one run, none of which had anything wrong
+ * with them.
+ */
+export function isAccountLevelApifyError(message: string): boolean {
+  return /hard limit exceeded|platform-feature-disabled|monthly usage|usage limit|payment|insufficient credit|401|403|unauthorized|invalid token|account.*(disabled|suspended)/i.test(
+    message,
+  );
+}
+
 /** True when there is nothing left worth scraping for this lead. */
 export function hasAllMaterial(lead: Lead): boolean {
   const has = (v: string | null) => typeof v === "string" && v.trim().length > 0;
@@ -91,7 +107,7 @@ export async function startLeadScrape(
   lead: Lead,
   client: Client,
   token: string,
-): Promise<{ started: number; error?: string }> {
+): Promise<{ started: number; error?: string; accountError?: string }> {
   const linkedinUrl = pickLinkedIn(lead);
   const websiteUrl = pickWebsite(lead);
 
@@ -138,7 +154,17 @@ export async function startLeadScrape(
     const reasons = [profile, posts, website]
       .filter((r) => r && typeof r === "object" && "error" in r)
       .map((r) => (r as { error: string }).error);
-    const message = `Could not start any scrape${reasons.length ? `: ${reasons[0]}` : ""}`;
+    const first = reasons[0] ?? "";
+
+    // The account is blocked, so this lead is fine and every other lead would
+    // fail the same way. Leave the row completely untouched and let the caller
+    // stop the run: marking it failed would blame the lead for a billing
+    // setting, and it would then need clearing by hand afterwards.
+    if (isAccountLevelApifyError(first)) {
+      return { started: 0, accountError: first.slice(0, 300) };
+    }
+
+    const message = `Could not start any scrape${first ? `: ${first}` : ""}`;
     await client
       .from("leads")
       .update({ enrichment_status: "failed", enrichment_error: message.slice(0, 500) })

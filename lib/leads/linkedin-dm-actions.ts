@@ -41,6 +41,7 @@ export async function advanceDmRun(
       scrapesFinished: 0,
       written: 0,
       failed: 0,
+      leadsTouched: 0,
       progress: await getProgressFor(avatarId, supabase),
       usage: EMPTY_USAGE,
       apifyUsd: 0,

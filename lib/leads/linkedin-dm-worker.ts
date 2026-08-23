@@ -236,6 +236,14 @@ export interface RunStepResult {
   scrapesFinished: number;
   written: number;
   failed: number;
+  /**
+   * Leads this pass finished with, successfully or not.
+   *
+   * The run limit counts THIS, not messages written. Counting written messages
+   * meant that when nothing could be written the limit never arrived, and a
+   * request for ten leads chewed through 165.
+   */
+  leadsTouched: number;
   progress: DmProgress;
   usage: TokenUsage;
   apifyUsd: number;
@@ -265,6 +273,7 @@ export async function advanceDmRunFor(
     scrapesFinished: 0,
     written: 0,
     failed: 0,
+    leadsTouched: 0,
     progress: await getProgressFor(avatarId, client),
     usage: EMPTY_USAGE,
     apifyUsd: 0,
@@ -334,8 +343,30 @@ export async function advanceDmRunFor(
 
     for (const row of (toScrape ?? []) as unknown as Lead[]) {
       const result = await startLeadScrape(row, client, token);
-      if (result.started > 0) scrapesStarted++;
-      else if (result.error) errors.push({ name: row.name, error: result.error });
+      if (result.started > 0) {
+        scrapesStarted++;
+        continue;
+      }
+      // Apify is refusing everything, so stop the whole run here rather than
+      // walking the rest of the campaign collecting identical failures. The
+      // refusal is instant and free, which is exactly why this ran away
+      // before: it looked like fast progress.
+      if (result.accountError) {
+        return {
+          scrapesStarted,
+          scrapesFinished,
+          written: 0,
+          failed: 0,
+          leadsTouched: 0,
+          progress: await getProgressFor(avatarId, client),
+          usage: EMPTY_USAGE,
+          apifyUsd,
+          errors,
+          fatal: `Apify refused: ${result.accountError}`,
+          workRemains: false,
+        };
+      }
+      if (result.error) errors.push({ name: row.name, error: result.error });
     }
   }
 
@@ -352,6 +383,8 @@ export async function advanceDmRunFor(
     scrapesFinished,
     written: batch.succeeded,
     failed: batch.failed,
+    // A lead is "done with" once it has a message or has failed trying.
+    leadsTouched: batch.succeeded + batch.failed,
     progress,
     usage: batch.usage,
     apifyUsd,

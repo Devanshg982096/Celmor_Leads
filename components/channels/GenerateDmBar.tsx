@@ -193,11 +193,17 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
 
         if (result.fatal) {
           setFatal(result.fatal);
+          // Clear the server-side flag too, or the background worker carries
+          // on retrying exactly what the browser just gave up on.
+          await stopRun(avatarId);
           break;
         }
         if (result.errors.length) setErrors(result.errors);
 
-        doneThisRun += result.written;
+        // Counts leads finished with, not messages produced. Counting written
+        // messages meant a run that could write nothing never reached its
+        // limit, and a request for ten leads walked through 165.
+        doneThisRun += result.leadsTouched;
         setWrittenThisRun(doneThisRun);
 
         setPhase(
@@ -212,13 +218,18 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
 
         if (result.written === 0 && result.scrapesFinished === 0) {
           idlePasses++;
-          // Nothing came back at all: give Apify time before the next look.
-          await new Promise((r) => setTimeout(r, Math.min(3000 * idlePasses, 12000)));
-          // A long stall with nothing in flight means it is stuck, not slow.
-          if (idlePasses > 12 && result.progress.scraping === 0) {
-            setFatal("Nothing progressed for a while. Stopped so it does not spin.");
+          // Nothing in flight and nothing coming back means it is stuck rather
+          // than slow. Stop early: this is the shape a runaway takes, since
+          // failures come back instantly and look like fast progress.
+          if (result.progress.scraping === 0 && idlePasses >= 3) {
+            setFatal(
+              "Nothing is progressing and nothing is being read. Stopped rather than working through the rest of the list.",
+            );
+            await stopRun(avatarId);
             break;
           }
+          // Otherwise give Apify time before looking again.
+          await new Promise((r) => setTimeout(r, Math.min(3000 * idlePasses, 12000)));
         } else {
           idlePasses = 0;
         }
