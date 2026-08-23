@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { TokenUsage } from "@/lib/leads/linkedin-dm";
+
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-opus-5";
 
@@ -24,6 +26,8 @@ export interface DmResult {
   /** 'thin' when there was almost nothing specific to work with. */
   quality: "good" | "thin";
   isAccountingFirm: boolean;
+  /** Reported by the API, so the cost shown is measured rather than guessed. */
+  usage: TokenUsage;
 }
 
 /** The fixed wording each opening is dropped into, straight from Settings. */
@@ -47,14 +51,20 @@ const SLOT_TITLES: Record<keyof DmTemplateSet, string> = {
  * Without this it writes the follow-up lines blind — a standalone observation
  * that then collides with whatever fixed sentence follows it. Seeing the real
  * text is what lets it write a line that hands off into the next one.
+ *
+ * [NAME] is deliberately NOT substituted. The system prompt is cached across
+ * every lead in a run, and caching only works while the text is byte-identical
+ * — dropping each person's name in here would give every lead a different
+ * prompt and quietly turn a ~70% saving into none at all. The greeting is
+ * added later during assembly anyway, so the model never needs it.
  */
-function renderTemplates(templates: DmTemplateSet, firstName: string): string {
+function renderTemplates(templates: DmTemplateSet): string {
   const blocks = (Object.keys(SLOT_TITLES) as (keyof DmTemplateSet)[])
     .map((slot) => {
       const raw = (templates[slot] ?? "").trim();
       if (!raw) return `=== ${SLOT_TITLES[slot]} ===\n(not in use — return "" for ${slot})`;
       const shown = raw
-        .replace(/\[NAME\]/g, firstName)
+        .replace(/\[NAME\]/g, "<their first name>")
         .replace(/\[OPENING\]/g, `>>>>> YOUR "${slot}" TEXT GOES HERE <<<<<`);
       return `=== ${SLOT_TITLES[slot]} ===\n${shown}`;
     })
@@ -70,9 +80,9 @@ function renderTemplates(templates: DmTemplateSet, firstName: string): string {
  * shape were part of that text, an innocent edit would take the whole batch
  * down.
  */
-function buildContract(templates: DmTemplateSet, firstName: string): string {
+function buildContract(templates: DmTemplateSet): string {
   return `
-${renderTemplates(templates, firstName)}
+${renderTemplates(templates)}
 
 HOW YOUR LINES MUST FIT (fixed; overrides anything above about output format)
 
@@ -187,8 +197,6 @@ export async function writeLinkedInDm(
   templates: DmTemplateSet,
   apiKey: string,
 ): Promise<DmResult> {
-  const firstName = source.name.trim().split(/\s+/)[0] ?? source.name;
-
   const res = await fetch(ANTHROPIC_URL, {
     method: "POST",
     headers: {
@@ -199,7 +207,16 @@ export async function writeLinkedInDm(
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 2000,
-      system: `${writingRules.trim()}\n\n${buildContract(templates, firstName)}`,
+      // Cached as one block. It is the same ~5k tokens of rules, templates and
+      // contract for every lead in a run, so paying full price per lead was
+      // most of the bill. Cache reads cost a tenth.
+      system: [
+        {
+          type: "text",
+          text: `${writingRules.trim()}\n\n${buildContract(templates)}`,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
       // Medium keeps a batch of hundreds affordable without making the lines
       // noticeably worse; this is a writing task, not a reasoning one.
       output_config: {
@@ -221,6 +238,19 @@ export async function writeLinkedInDm(
   const data = (await res.json()) as {
     content?: { type: string; text?: string }[];
     stop_reason?: string;
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
+  };
+
+  const usage: TokenUsage = {
+    input: data.usage?.input_tokens ?? 0,
+    output: data.usage?.output_tokens ?? 0,
+    cacheWrite: data.usage?.cache_creation_input_tokens ?? 0,
+    cacheRead: data.usage?.cache_read_input_tokens ?? 0,
   };
 
   if (data.stop_reason === "refusal") {
@@ -250,5 +280,6 @@ export async function writeLinkedInDm(
     // Absent or malformed is treated as "looks fine" — a missing flag must
     // never quietly mark a real accountant as out of scope.
     isAccountingFirm: parsed.is_accounting_firm !== false,
+    usage,
   };
 }

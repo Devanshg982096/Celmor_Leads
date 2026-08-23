@@ -13,21 +13,82 @@ export interface DmTemplates {
 }
 
 /**
- * Five at a time. Small enough to stay well inside a serverless function's
- * timeout and to keep API usage gentle, big enough that 388 leads is ~78
- * rounds rather than 388.
+ * How many leads are written simultaneously in one round.
  *
  * Lives here rather than beside the server actions because a "use server"
  * module may only export async functions — a plain constant in one is a build
  * error, not a type error.
  */
 export const DM_BATCH_SIZE = 5;
+export const DM_BATCH_OPTIONS = [2, 3, 5, 8, 10] as const;
+
+/** How many leads one run covers before stopping. 0 means "all of them". */
+export const DM_RUN_SIZE_OPTIONS = [10, 25, 50, 100, 0] as const;
 
 export interface DmProgress {
   total: number;
   written: number;
   failed: number;
   remaining: number;
+}
+
+/* ─────────────────────────────── cost ─────────────────────────────────── */
+
+/**
+ * Rates for claude-opus-5, in US dollars per million tokens.
+ *
+ * Hard-coded because the API does not report prices, only token counts. If
+ * Anthropic changes their pricing this is the one place to correct, and the
+ * displayed figure is an estimate from these numbers rather than a bill.
+ */
+export const MODEL_RATES = {
+  input: 5,
+  output: 25,
+  /** Writing to the cache costs a premium; reading from it is a tenth. */
+  cacheWrite: 6.25,
+  cacheRead: 0.5,
+} as const;
+
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+}
+
+export const EMPTY_USAGE: TokenUsage = {
+  input: 0,
+  output: 0,
+  cacheWrite: 0,
+  cacheRead: 0,
+};
+
+export function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  return {
+    input: a.input + b.input,
+    output: a.output + b.output,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+    cacheRead: a.cacheRead + b.cacheRead,
+  };
+}
+
+/** Dollars for a given token count, from the rates above. */
+export function costOf(u: TokenUsage): number {
+  return (
+    (u.input * MODEL_RATES.input +
+      u.output * MODEL_RATES.output +
+      u.cacheWrite * MODEL_RATES.cacheWrite +
+      u.cacheRead * MODEL_RATES.cacheRead) /
+    1_000_000
+  );
+}
+
+/** Small amounts need more decimals than a price tag does. */
+export function formatCost(usd: number): string {
+  if (usd === 0) return "$0.00";
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  if (usd < 1) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
 }
 
 export const DM_SLOTS: { slot: LinkedInDmSlot; label: string }[] = [
