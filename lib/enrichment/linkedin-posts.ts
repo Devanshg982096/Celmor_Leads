@@ -58,6 +58,50 @@ function profileSlug(url: string | undefined): string | null {
   return m ? decodeURIComponent(m[1]).toLowerCase().replace(/\/$/, "") : null;
 }
 
+/** Names compared loosely: case, accents, punctuation and post-nominals off. */
+function normaliseName(name: string | undefined): string {
+  return String(name ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    // Post-nominals appear on the profile but rarely on the post byline.
+    .filter((w) => !["fcca", "acca", "aca", "maat", "fmaat", "mba", "bsc", "acma", "cgma", "mipa", "afa"].includes(w))
+    .join(" ");
+}
+
+/**
+ * Is this post the lead's own words, or something they reshared?
+ *
+ * Matched on URL first and name second. URL alone is not enough: LinkedIn
+ * vanity addresses change, and the one in an Apollo export can be years out of
+ * date, so a perfectly ordinary lead ends up with every one of their own posts
+ * labelled as somebody else's. That happened, and the message that came out
+ * ignored ten usable posts because it had been told none of them were his.
+ *
+ * Getting this wrong in the other direction is worse, so an unknown author is
+ * only treated as the lead's own when there is nothing at all to compare.
+ */
+function isOwnPost(
+  authorUrl: string | undefined,
+  authorName: string | undefined,
+  targetSlug: string | null,
+  targetName: string,
+): boolean {
+  const authorSlug = profileSlug(authorUrl);
+  if (targetSlug && authorSlug) {
+    if (authorSlug === targetSlug) return true;
+    // Fall through: a mismatch might just be a renamed profile.
+  }
+  const a = normaliseName(authorName);
+  const t = normaliseName(targetName);
+  if (a && t && a === t) return true;
+  // Nothing identifying the author at all: assume the feed's owner.
+  return !authorSlug && !a;
+}
+
 /** "3 months ago" from an ISO date, for when postedAgoText is missing. */
 function ageFrom(date: string | undefined, now: number): string | null {
   if (!date) return null;
@@ -91,6 +135,7 @@ function ageFrom(date: string | undefined, now: number): string | null {
 export function summariseLinkedInPosts(
   items: LinkedInPost[],
   targetUrl: string,
+  targetName: string = "",
   now: number = Date.now(),
 ): string | null {
   if (!items.length) return null;
@@ -100,10 +145,12 @@ export function summariseLinkedInPosts(
   const rows = items
     .map((p) => {
       const text = (p.content ?? "").replace(/\s+/g, " ").trim();
-      const authorSlug = profileSlug(p.author?.linkedinUrl);
-      const isOwn = !target || !authorSlug || authorSlug === target;
+      const isOwn = isOwnPost(p.author?.linkedinUrl, p.author?.name, target, targetName);
       const date = p.postedAt?.date;
-      const age = p.postedAt?.postedAgoText ?? ageFrom(date, now);
+      // The scraper appends visibility text to this, e.g. "2 weeks ago •
+      // Visible to anyone on or off LinkedIn". Only the age is wanted.
+      const agoText = p.postedAt?.postedAgoText?.split("•")[0].trim();
+      const age = agoText || ageFrom(date, now);
       const ts = p.postedAt?.timestamp ?? (date ? Date.parse(date) : 0);
       return { text, isOwn, date, age, ts, author: p.author?.name };
     })

@@ -252,7 +252,9 @@ export async function pollLeadScrape(
   ]);
 
   const profileSummary = profileItems ? summariseLinkedInItems(profileItems) : null;
-  const postsSummary = postItems ? summariseLinkedInPosts(postItems, linkedinUrl) : null;
+  const postsSummary = postItems
+    ? summariseLinkedInPosts(postItems, linkedinUrl, lead.name)
+    : null;
   const websiteSummary = websiteItems ? summariseWebsiteItems(websiteItems) : null;
 
   // Only overwrite where we actually got something, so a failed re-scrape

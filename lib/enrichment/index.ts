@@ -186,7 +186,7 @@ export async function finalizeEnrichment(
   const postsSummary = await fetchSummary(
     postsRun,
     ws.apify_token,
-    (items: LinkedInPost[]) => summariseLinkedInPosts(items, linkedinUrl ?? ""),
+    (items: LinkedInPost[]) => summariseLinkedInPosts(items, linkedinUrl ?? "", lead.name),
   );
 
   if (!websiteSummary.summary && !linkedinSummary.summary && !postsSummary.summary) {
