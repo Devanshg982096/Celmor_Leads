@@ -38,7 +38,8 @@ interface Props {
   initial: DmProgress;
 }
 
-const RUN_SIZE_LABEL = (n: number) => (n === 0 ? "All remaining" : `${n} leads`);
+const RUN_SIZE_LABEL = (n: number) =>
+  n === 0 ? "All remaining" : n === 1 ? "Just 1 lead" : `${n} leads`;
 
 /** Radial progress. Written by hand so it needs no charting dependency. */
 function ProgressRing({

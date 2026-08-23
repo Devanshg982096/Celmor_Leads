@@ -20,10 +20,15 @@ export interface DmTemplates {
  * error, not a type error.
  */
 export const DM_BATCH_SIZE = 5;
-export const DM_BATCH_OPTIONS = [2, 3, 5, 8, 10] as const;
+export const DM_BATCH_OPTIONS = [1, 2, 3, 5, 8, 10] as const;
 
-/** How many leads one run covers before stopping. 0 means "all of them". */
-export const DM_RUN_SIZE_OPTIONS = [10, 25, 50, 100, 0] as const;
+/**
+ * How many leads one run covers before stopping. 0 means "all of them".
+ *
+ * 1 is there on purpose: the sane way to check a change is on a single lead
+ * you can then read end to end, not on the smallest batch that felt tidy.
+ */
+export const DM_RUN_SIZE_OPTIONS = [1, 5, 10, 25, 50, 100, 0] as const;
 
 export interface DmProgress {
   total: number;
