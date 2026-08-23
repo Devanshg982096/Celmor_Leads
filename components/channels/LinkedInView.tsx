@@ -121,6 +121,7 @@ export default function LinkedInView({
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
   const [stageFilter, setStageFilter] = useState<LinkedInStage | "all">("all");
+  const [msgFilter, setMsgFilter] = useState<"all" | "written" | "not_written" | "flagged">("all");
 
   const optimisticPatch = useCallback(
     async (leadId: string, patch: Partial<Lead>, run: () => Promise<void>) => {
@@ -136,10 +137,18 @@ export default function LinkedInView({
     [leads],
   );
 
-  // none-stage first, then by linkedin_stage_updated_at desc.
+  // Most recently written first, so what a run just produced is at the top
+  // rather than buried. Generation works oldest-first while this table read
+  // newest-first, which put a fresh batch at the bottom of hundreds of rows.
   const sorted = useMemo(() => {
     const copy = [...leads];
     copy.sort((a, b) => {
+      const aGen = a.linkedin_dm_generated_at;
+      const bGen = b.linkedin_dm_generated_at;
+      if (aGen && bGen) return new Date(bGen).getTime() - new Date(aGen).getTime();
+      if (aGen) return -1;
+      if (bGen) return 1;
+
       const rankDiff = STAGE_RANK[a.linkedin_stage] - STAGE_RANK[b.linkedin_stage];
       if (rankDiff !== 0) return rankDiff;
       const aT = a.linkedin_stage_updated_at ?? a.created_at;
@@ -156,10 +165,15 @@ export default function LinkedInView({
   );
   const visible = useMemo(
     () =>
-      qualifiedLeads.filter(
-        (l) => stageFilter === "all" || l.linkedin_stage === stageFilter,
-      ),
-    [qualifiedLeads, stageFilter],
+      qualifiedLeads
+        .filter((l) => stageFilter === "all" || l.linkedin_stage === stageFilter)
+        .filter((l) => {
+          if (msgFilter === "written") return l.linkedin_open_first !== null;
+          if (msgFilter === "not_written") return l.linkedin_open_first === null;
+          if (msgFilter === "flagged") return l.linkedin_dm_flag !== null;
+          return true;
+        }),
+    [qualifiedLeads, stageFilter, msgFilter],
   );
 
   const counts = useMemo(() => {
@@ -222,6 +236,31 @@ export default function LinkedInView({
         ]}
       />
 
+      <div className="flex flex-wrap items-center gap-3 mb-2">
+        <ChipRow<"all" | "written" | "not_written" | "flagged">
+          value={msgFilter}
+          onChange={setMsgFilter}
+          options={[
+            { value: "all", label: "All leads", count: qualifiedLeads.length },
+            {
+              value: "written",
+              label: "Message written",
+              count: qualifiedLeads.filter((l) => l.linkedin_open_first !== null).length,
+            },
+            {
+              value: "not_written",
+              label: "Not written yet",
+              count: qualifiedLeads.filter((l) => l.linkedin_open_first === null).length,
+            },
+            {
+              value: "flagged",
+              label: "Needs a look",
+              count: qualifiedLeads.filter((l) => l.linkedin_dm_flag !== null).length,
+            },
+          ]}
+        />
+      </div>
+
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <ChipRow<LinkedInStage | "all">
           value={stageFilter}
@@ -250,14 +289,16 @@ export default function LinkedInView({
               <TableHead>First Name</TableHead>
               <TableHead>Last Name</TableHead>
               <TableHead>Company</TableHead>
-              <TableHead>Employees</TableHead>
-              <TableHead>Website</TableHead>
-              <TableHead>LinkedIn</TableHead>
+              {/* The messages are the point of this tab, so they sit before
+                  the firmographics rather than off the right-hand edge. */}
               {DM_SLOTS.map((s) => (
                 <TableHead key={s.slot} className="whitespace-nowrap">
                   {s.label}
                 </TableHead>
               ))}
+              <TableHead>Employees</TableHead>
+              <TableHead>Website</TableHead>
+              <TableHead>LinkedIn</TableHead>
               <TableHead>Stage</TableHead>
               <TableHead>Days since</TableHead>
               <TableHead>Qualified</TableHead>
@@ -307,6 +348,11 @@ export default function LinkedInView({
                     </TableCell>
                     <TableCell className="whitespace-nowrap">{last || "—"}</TableCell>
                     <TableCell className="whitespace-nowrap">{lead.company ?? "—"}</TableCell>
+                    {DM_SLOTS.map((s) => (
+                      <TableCell key={s.slot} className="align-top">
+                        <DmCell state={dmFor(lead, dmTemplates, s.slot)} />
+                      </TableCell>
+                    ))}
                     <TableCell className="whitespace-nowrap">
                       {employees || <span className="text-muted-foreground">—</span>}
                     </TableCell>
@@ -340,11 +386,6 @@ export default function LinkedInView({
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    {DM_SLOTS.map((s) => (
-                      <TableCell key={s.slot} className="align-top">
-                        <DmCell state={dmFor(lead, dmTemplates, s.slot)} />
-                      </TableCell>
-                    ))}
                     <TableCell>
                       <StatusCell<LinkedInStage>
                         value={lead.linkedin_stage}
