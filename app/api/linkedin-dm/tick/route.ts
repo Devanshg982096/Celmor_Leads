@@ -3,7 +3,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { advanceDmRunFor } from "@/lib/leads/linkedin-dm-worker";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+
+/**
+ * Netlify caps a synchronous function well below the 60s Next.js will happily
+ * accept here, so a longer budget just means being killed mid-pass with rows
+ * left claimed. Kept under the platform limit deliberately: the schedule runs
+ * every minute, so short passes are fine.
+ */
+export const maxDuration = 25;
+const WORK_BUDGET_MS = 18_000;
 
 /**
  * Carries on any LinkedIn DM run whose browser tab has gone away.
@@ -28,7 +36,7 @@ export async function POST(request: Request) {
   }
 
   // Leave headroom under maxDuration so the response still gets out.
-  const deadline = Date.now() + 45_000;
+  const deadline = Date.now() + WORK_BUDGET_MS;
   const supabase = createAdminClient();
 
   const { data: runs, error } = await supabase

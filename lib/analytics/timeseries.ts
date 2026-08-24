@@ -20,29 +20,20 @@ export async function activityCountsByDay(opts: {
   const sinceMs = Date.now() - opts.days * 24 * 60 * 60 * 1000;
   const sinceIso = new Date(sinceMs).toISOString();
 
-  // Fetch the lead ids for this avatar so we can filter activity_log.
-  const { data: leadIds } = await supabase
-    .from("leads")
-    .select("id")
-    .eq("avatar_id", opts.avatarId);
-  const ids = (leadIds as { id: string }[] | null)?.map((l) => l.id) ?? [];
-  if (ids.length === 0) return new Array(opts.days).fill(0);
+  // Joined rather than filtered by a list of ids. Fetching every lead id and
+  // sending them back in 500-item IN clauses meant several sequential requests
+  // with roughly 18KB of ids in the URL each, which is what made the hub time
+  // out intermittently on larger campaigns.
+  const base = supabase
+    .from("activity_log")
+    .select("created_at, action, leads!inner(avatar_id)")
+    .eq("leads.avatar_id", opts.avatarId)
+    .gte("created_at", sinceIso);
 
-  // Chunk into 500-id batches to stay under PG `IN (...)` limits.
-  const chunks: string[][] = [];
-  for (let i = 0; i < ids.length; i += 500) chunks.push(ids.slice(i, i + 500));
-
-  const rows: { created_at: string; action: string }[] = [];
-  for (const chunk of chunks) {
-    let q = supabase
-      .from("activity_log")
-      .select("created_at, action")
-      .in("lead_id", chunk)
-      .gte("created_at", sinceIso);
-    if (opts.actionLike) q = q.ilike("action", `%${opts.actionLike}%`);
-    const { data } = await q;
-    if (data) rows.push(...(data as { created_at: string; action: string }[]));
-  }
+  const { data } = opts.actionLike
+    ? await base.ilike("action", `%${opts.actionLike}%`)
+    : await base;
+  const rows = (data ?? []) as { created_at: string; action: string }[];
 
   // Bucket by UTC day, indexed 0..days-1 where days-1 is today.
   const buckets = new Array(opts.days).fill(0) as number[];
@@ -69,29 +60,16 @@ export async function emailsByDay(opts: {
   const sinceMs = Date.now() - opts.days * 24 * 60 * 60 * 1000;
   const sinceIso = new Date(sinceMs).toISOString();
 
-  const { data: leadIds } = await supabase
-    .from("leads")
-    .select("id")
-    .eq("avatar_id", opts.avatarId);
-  const ids = (leadIds as { id: string }[] | null)?.map((l) => l.id) ?? [];
   const empty = () => new Array(opts.days).fill(0) as number[];
-  if (ids.length === 0) {
-    return { sent: empty(), replied: empty(), bounced: empty() };
-  }
 
-  const chunks: string[][] = [];
-  for (let i = 0; i < ids.length; i += 500) chunks.push(ids.slice(i, i + 500));
-
-  const rows: { created_at: string; action: string }[] = [];
-  for (const chunk of chunks) {
-    const { data } = await supabase
-      .from("activity_log")
-      .select("created_at, action")
-      .in("lead_id", chunk)
-      .gte("created_at", sinceIso)
-      .ilike("action", "Email status%");
-    if (data) rows.push(...(data as { created_at: string; action: string }[]));
-  }
+  // One joined query, for the same reason as activityCountsByDay above.
+  const { data } = await supabase
+    .from("activity_log")
+    .select("created_at, action, leads!inner(avatar_id)")
+    .eq("leads.avatar_id", opts.avatarId)
+    .gte("created_at", sinceIso)
+    .ilike("action", "Email status%");
+  const rows = (data ?? []) as { created_at: string; action: string }[];
 
   const sent = empty();
   const replied = empty();
