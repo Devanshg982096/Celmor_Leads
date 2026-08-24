@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Table,
   TableBody,
@@ -241,6 +242,26 @@ export default function LinkedInView({
     [visible.length, counts],
   );
 
+  /* ── Virtualisation ──────────────────────────────────────────────────
+     Without this the table drew every row at once. At 388 leads and 14
+     columns that is over 5,000 cells, 1,552 of them message cells carrying
+     their own hover state and timer, and scrolling through them stalled the
+     page. The master sheet already worked this way; this table did not. */
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const visibleColCount = COLUMNS.filter((c) => isVisible(c.key)).length;
+  const rowVirtualizer = useVirtualizer({
+    count: visible.length,
+    getScrollElement: () => scrollRef.current,
+    // Message cells make these rows taller than the master sheet's.
+    estimateSize: () => 56,
+    overscan: 10,
+  });
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
+  const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
+  const paddingBottom =
+    virtualItems.length > 0 ? totalSize - virtualItems[virtualItems.length - 1].end : 0;
+
   return (
     <>
       <GenerateDmBar avatarId={avatarId} initial={dmProgress} />
@@ -312,9 +333,13 @@ export default function LinkedInView({
         />
       </div>
 
-      <div className="rounded-md border overflow-x-auto">
+      <div
+        ref={scrollRef}
+        className="rounded-md border overflow-auto"
+        style={{ maxHeight: "calc(100vh - 340px)" }}
+      >
         <Table>
-          <TableHeader>
+          <TableHeader className="sticky top-0 z-10 bg-[var(--bg-elevated)]">
             <TableRow>
               {isVisible("first_name") && <TableHead>First Name</TableHead>}
               {isVisible("last_name") && <TableHead>Last Name</TableHead>}
@@ -346,7 +371,14 @@ export default function LinkedInView({
                 </TableCell>
               </TableRow>
             ) : (
-              visible.map((lead) => {
+              <>
+                {paddingTop > 0 && (
+                  <tr style={{ height: `${paddingTop}px` }} aria-hidden>
+                    <td colSpan={visibleColCount} />
+                  </tr>
+                )}
+                {virtualItems.map((virtualRow) => {
+                const lead = visible[virtualRow.index];
                 const { first, last } = splitName(lead.name);
                 const employees = getLeadValue(lead, "employees");
                 const website =
@@ -355,6 +387,8 @@ export default function LinkedInView({
                 return (
                   <TableRow
                     key={lead.id}
+                    data-index={virtualRow.index}
+                    ref={rowVirtualizer.measureElement}
                     className="cursor-pointer hover:bg-accent/40"
                     onClick={() => setOpenLeadId(lead.id)}
                   >
@@ -501,7 +535,13 @@ export default function LinkedInView({
                     )}
                   </TableRow>
                 );
-              })
+                })}
+                {paddingBottom > 0 && (
+                  <tr style={{ height: `${paddingBottom}px` }} aria-hidden>
+                    <td colSpan={visibleColCount} />
+                  </tr>
+                )}
+              </>
             )}
           </TableBody>
         </Table>
