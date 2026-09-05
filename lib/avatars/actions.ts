@@ -22,7 +22,9 @@ export async function listAvatarsWithStats(): Promise<AvatarWithStats[]> {
   const sinceIso = new Date(sinceMs).toISOString();
 
   const [{ data: avatars }, { data: profiles }, { data: leads }, { data: activity }] = await Promise.all([
-    supabase.from("avatars").select("*").order("created_at", { ascending: false }),
+    // Hidden avatars stay in the database and remain reachable by direct
+    // URL; they are only kept out of the lists.
+    supabase.from("avatars").select("*").eq("hidden", false).order("created_at", { ascending: false }),
     supabase.from("profiles").select("*"),
     supabase
       .from("leads")

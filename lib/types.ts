@@ -45,6 +45,11 @@ export interface AvatarRow {
   dm_run_target: number | null;
   dm_run_started_at: string | null;
   dm_run_started_by: string | null;
+  /**
+   * Kept out of the avatar lists. Not a delete: the leads, messages and
+   * scraped material stay, and the avatar is still reachable by URL.
+   */
+  hidden: boolean;
 }
 
 export interface LeadRow {

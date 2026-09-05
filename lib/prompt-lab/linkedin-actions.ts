@@ -34,6 +34,7 @@ export async function listLabAvatars(): Promise<LabAvatar[]> {
   const { data } = await supabase
     .from("avatars")
     .select("id, name, total_leads")
+    .eq("hidden", false)
     .order("name", { ascending: true });
 
   return (data ?? []).map((a: Record<string, unknown>) => ({

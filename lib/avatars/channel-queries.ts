@@ -45,6 +45,7 @@ export async function listAvatarsForSwitcher(): Promise<
   const { data, error } = await supabase
     .from("avatars")
     .select("id, name")
+    .eq("hidden", false)
     .order("name", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as Pick<Avatar, "id" | "name">[];
