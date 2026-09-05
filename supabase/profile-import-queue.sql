@@ -55,8 +55,8 @@ begin
   select * into job from public.profile_import_queue where id=p_job and status='processing' and lease_token=p_lease for update;
   if not found then return null; end if;
   select * into existing from public.leads where avatar_id=job.avatar_id and (
-    regexp_replace(regexp_replace(lower(coalesce(linkedin_url,'')), '[?#].*$', ''), '^https?://([a-z]{2,3}\.)?linkedin\.com/in/([^/]+)/?$', '\2') =
-    regexp_replace(job.linkedin_url, '^https://www.linkedin.com/in/', '')
+    split_part(trim(trailing '/' from split_part(split_part(lower(coalesce(linkedin_url,'')), '?', 1), '#', 1)), '/in/', 2) =
+    split_part(job.linkedin_url, '/in/', 2)
     or (coalesce(p_draft->>'email','') <> '' and lower(email)=lower(p_draft->>'email'))
   ) order by created_at limit 1 for update;
   if found then
