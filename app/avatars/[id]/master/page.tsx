@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
+import AddLeadsDialog from "@/components/hub/AddLeadsDialog";
 import LeadsTable from "@/components/avatars/LeadsTable";
 import ChannelTabs from "@/components/avatars/ChannelTabs";
 import { createClient } from "@/lib/supabase/server";
@@ -54,7 +55,10 @@ export default async function MasterSheetPage({
             {avatar.visible_columns.length} visible columns
           </p>
         </div>
-        <ChannelTabs avatarId={id} />
+        <div className="flex flex-wrap items-center gap-3">
+          <AddLeadsDialog avatarId={id} />
+          <ChannelTabs avatarId={id} />
+        </div>
       </div>
 
       <LeadsTable

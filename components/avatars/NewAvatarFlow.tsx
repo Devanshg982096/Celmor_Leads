@@ -35,6 +35,7 @@ export default function NewAvatarFlow() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [parsed, setParsed] = useState<ParsedState | null>(null);
+  const [startEmpty, setStartEmpty] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [avatarName, setAvatarName] = useState("");
@@ -133,14 +134,14 @@ export default function NewAvatarFlow() {
   }
 
   function handleSubmit() {
-    if (!parsed) return;
+    if (!parsed && !startEmpty) return;
     if (!avatarName.trim()) {
       setSubmitError("Please give this Avatar a name.");
       return;
     }
     setSubmitError(null);
 
-    const leads: NewLeadInput[] = parsed.rows
+    const leads: NewLeadInput[] = (parsed?.rows ?? [])
       .filter((r) => (r.email ?? "").trim() !== "")
       .map((r) => ({
         name: (r.name ?? "").trim() || (r.email ?? "").trim(),
@@ -174,7 +175,7 @@ export default function NewAvatarFlow() {
     });
   }
 
-  if (!parsed) {
+  if (!parsed && !startEmpty) {
     return (
       <Card>
         <CardContent className="p-6 space-y-4">
@@ -206,6 +207,24 @@ export default function NewAvatarFlow() {
             <p className="text-xs text-muted-foreground mt-3">CSV files only</p>
           </div>
 
+          <div className="border-t pt-4 space-y-2">
+            <Button
+              variant="outline"
+              disabled={parsing}
+              onClick={() => {
+                setStartEmpty(true);
+                setParseError(null);
+                setSubmitError(null);
+                setVisibleKeys(new Set(REQUIRED_VISIBLE_COLUMNS));
+              }}
+            >
+              Continue without CSV
+            </Button>
+            <p className="text-sm text-muted-foreground">
+              Create an empty Avatar and add your files later using Add leads.
+            </p>
+          </div>
+
           {parseError && (
             <p className="text-sm text-destructive">{parseError}</p>
           )}
@@ -218,17 +237,26 @@ export default function NewAvatarFlow() {
     <div className="space-y-6">
       <Card>
         <CardContent className="p-6 space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm text-muted-foreground">File</p>
-              <p className="font-medium">{parsed.fileName}</p>
+          {parsed ? (
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">File</p>
+                <p className="font-medium">{parsed.fileName}</p>
+              </div>
+              <Badge variant="secondary">
+                {parsed.rows.length.toLocaleString()} rows detected
+              </Badge>
             </div>
-            <Badge variant="secondary">
-              {parsed.rows.length.toLocaleString()} rows detected
-            </Badge>
-          </div>
+          ) : (
+            <div>
+              <h2 className="text-lg font-semibold">Start with an empty Avatar</h2>
+              <p className="text-sm text-muted-foreground">
+                Give your Avatar a name. You can add files from its master sheet whenever you are ready.
+              </p>
+            </div>
+          )}
 
-          {parsed.duplicateInfo && parsed.duplicateInfo.totalDuplicates > 0 && (
+          {parsed?.duplicateInfo && parsed.duplicateInfo.totalDuplicates > 0 && (
             <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900 p-4 text-sm">
               <p className="font-medium text-amber-900 dark:text-amber-200">
                 ⚠️ {parsed.duplicateInfo.totalDuplicates.toLocaleString()} of these leads already exist
@@ -259,42 +287,44 @@ export default function NewAvatarFlow() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="p-6 space-y-3">
-          <div>
-            <h3 className="font-semibold">Columns to show in the table</h3>
-            <p className="text-sm text-muted-foreground">
-              Name, Email, Company and LinkedIn URL are always visible. Everything else is stored in
-              the lead&apos;s raw data either way — you&apos;re just picking what shows in the smart table.
-            </p>
-          </div>
+      {parsed && (
+        <Card>
+          <CardContent className="p-6 space-y-3">
+            <div>
+              <h3 className="font-semibold">Columns to show in the table</h3>
+              <p className="text-sm text-muted-foreground">
+                Name, Email, Company and LinkedIn URL are always visible. Everything else is stored in
+                the lead&apos;s raw data either way — you&apos;re just picking what shows in the smart table.
+              </p>
+            </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {parsed.detectedKeys.map((key) => {
-              const required = (REQUIRED_VISIBLE_COLUMNS as readonly string[]).includes(key);
-              const checked = required || visibleKeys.has(key);
-              return (
-                <label
-                  key={key}
-                  className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm cursor-pointer hover:bg-accent"
-                >
-                  <Checkbox
-                    checked={checked}
-                    disabled={required || isPending}
-                    onCheckedChange={(v) => toggleColumn(key, v === true)}
-                  />
-                  <span className="flex-1">{labelFor(key)}</span>
-                  {required && (
-                    <Badge variant="outline" className="text-xs">
-                      required
-                    </Badge>
-                  )}
-                </label>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {parsed.detectedKeys.map((key) => {
+                const required = (REQUIRED_VISIBLE_COLUMNS as readonly string[]).includes(key);
+                const checked = required || visibleKeys.has(key);
+                return (
+                  <label
+                    key={key}
+                    className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm cursor-pointer hover:bg-accent"
+                  >
+                    <Checkbox
+                      checked={checked}
+                      disabled={required || isPending}
+                      onCheckedChange={(v) => toggleColumn(key, v === true)}
+                    />
+                    <span className="flex-1">{labelFor(key)}</span>
+                    {required && (
+                      <Badge variant="outline" className="text-xs">
+                        required
+                      </Badge>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {submitError && (
         <p className="text-sm text-destructive">{submitError}</p>
@@ -313,17 +343,22 @@ export default function NewAvatarFlow() {
             variant="outline"
             onClick={() => {
               setParsed(null);
+              setStartEmpty(false);
+              setSubmitError(null);
+              setParseError(null);
               setAvatarName("");
               setVisibleKeys(new Set());
             }}
             disabled={isPending}
           >
-            Choose different file
+            {startEmpty ? "Back" : "Choose different file"}
           </Button>
           <Button onClick={handleSubmit} disabled={isPending}>
             {isPending
               ? `Creating Avatar…`
-              : `Create Avatar with ${parsed.rows.length.toLocaleString()} leads`}
+              : parsed
+                ? `Create Avatar with ${parsed.rows.length.toLocaleString()} leads`
+                : "Create Avatar"}
           </Button>
         </div>
       </div>

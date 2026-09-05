@@ -17,7 +17,7 @@ export default function NewAvatarPage() {
             Create new Avatar
           </h1>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
-            Each Avatar is one Apollo CSV import representing a target persona.
+            Create an Avatar for a target persona. Import a CSV now or start empty and add files later.
           </p>
         </div>
         <NewAvatarFlow />

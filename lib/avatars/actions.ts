@@ -177,6 +177,9 @@ export async function createAvatar(input: {
   visibleColumns: string[];
   leads: NewLeadInput[];
 }): Promise<string> {
+  const name = input.name.trim();
+  if (!name) throw new Error("Please give this Avatar a name.");
+
   const supabase = await createClient();
 
   const {
@@ -187,10 +190,10 @@ export async function createAvatar(input: {
   const { data: avatar, error: avatarError } = await supabase
     .from("avatars")
     .insert({
-      name: input.name,
+      name,
       created_by: user.id,
       visible_columns: input.visibleColumns,
-      source: "Apollo",
+      source: input.leads.length === 0 ? "Manual" : "Apollo",
     })
     .select()
     .single();
