@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import {
   writeLinkedInDm,
@@ -9,12 +10,32 @@ import {
 } from "@/lib/enrichment/linkedin-dm-writer";
 import { fillTemplate, DM_SLOTS } from "@/lib/leads/linkedin-dm";
 import { getLeadValue } from "@/lib/leads-columns";
-import type { Lead, LinkedInDmSlot } from "@/lib/types";
+import type { Lead, LinkedInDmField, LinkedInDmSlot } from "@/lib/types";
+
+const LINKEDIN_DM_FIELDS = [
+  "linkedin_dm_prompt",
+  "linkedin_dm_template",
+  "linkedin_followup_1",
+  "linkedin_followup_2",
+  "linkedin_followup_3",
+] as const satisfies readonly LinkedInDmField[];
+
+const REQUIRED_WORDING = new Set<string>(["linkedin_dm_prompt", "linkedin_dm_template"]);
+
+const WORDING_LABELS: Record<string, string> = {
+  linkedin_dm_prompt: "Writing rules",
+  linkedin_dm_template: "First message",
+  linkedin_followup_1: "Follow-up 1",
+  linkedin_followup_2: "Follow-up 2",
+  linkedin_followup_3: "Follow-up 3",
+};
 
 export interface LabAvatar {
   id: string;
   name: string;
   leadCount: number;
+  /** This campaign's own wording, so switching campaign swaps the whole lab. */
+  wording: Record<LinkedInDmField, string>;
 }
 
 export interface LabLead {
@@ -28,20 +49,90 @@ export interface LabLead {
   hasMessages: boolean;
 }
 
-/** Campaigns to choose from, richest first. */
+/**
+ * Campaigns to choose from, each with its own wording.
+ *
+ * Sahil and Kushal pitch different things from different LinkedIn accounts, so
+ * the messages belong to the campaign. A campaign that has never been edited
+ * has nulls, and falls back to the workspace wording so it is never blank.
+ */
 export async function listLabAvatars(): Promise<LabAvatar[]> {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("avatars")
-    .select("id, name, total_leads")
-    .eq("hidden", false)
-    .order("name", { ascending: true });
+  const [{ data }, { data: ws }] = await Promise.all([
+    supabase
+      .from("avatars")
+      .select(
+        "id, name, total_leads, linkedin_dm_prompt, linkedin_dm_template, linkedin_followup_1, linkedin_followup_2, linkedin_followup_3",
+      )
+      .eq("hidden", false)
+      .order("name", { ascending: true }),
+    supabase
+      .from("workspace_settings")
+      .select(
+        "linkedin_dm_prompt, linkedin_dm_template, linkedin_followup_1, linkedin_followup_2, linkedin_followup_3",
+      )
+      .eq("id", 1)
+      .maybeSingle(),
+  ]);
 
+  const fallback = (ws ?? {}) as Record<string, string | null>;
   return (data ?? []).map((a: Record<string, unknown>) => ({
     id: a.id as string,
     name: a.name as string,
     leadCount: (a.total_leads as number) ?? 0,
+    wording: Object.fromEntries(
+      LINKEDIN_DM_FIELDS.map((f) => [
+        f,
+        ((a[f] as string | null) ?? fallback[f] ?? "") as string,
+      ]),
+    ) as Record<LinkedInDmField, string>,
   }));
+}
+
+/**
+ * Save one campaign's wording.
+ *
+ * Mirrors the workspace validation: a blank follow-up means "don't send one",
+ * but a blank first message or blank rules would silently produce empty DMs,
+ * so both are refused.
+ */
+export async function saveAvatarWording(
+  avatarId: string,
+  values: Partial<Record<LinkedInDmField, string>>,
+): Promise<{ error?: string; success?: true }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const patch: Record<string, string | null> = {};
+  for (const [key, raw] of Object.entries(values)) {
+    if (!(LINKEDIN_DM_FIELDS as readonly string[]).includes(key)) continue;
+    const next = (raw ?? "").trim();
+    if (REQUIRED_WORDING.has(key) && next.length === 0) {
+      return { error: `${WORDING_LABELS[key] ?? key} can't be empty.` };
+    }
+    patch[key] = next.length === 0 ? null : next;
+  }
+  if (Object.keys(patch).length === 0) return { success: true };
+
+  // [OPENING] is load-bearing in the first message. Without it the
+  // personalised paragraphs have nowhere to go and everyone gets the same pitch.
+  const template = patch.linkedin_dm_template;
+  if (typeof template === "string" && !template.includes("[OPENING]")) {
+    return {
+      error:
+        "First message must contain [OPENING] — that's where the personalised paragraphs go.",
+    };
+  }
+
+  const { error } = await supabase.from("avatars").update(patch).eq("id", avatarId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/prompt-lab/linkedin");
+  revalidatePath(`/avatars/${avatarId}/linkedin`);
+  return { success: true };
 }
 
 /**

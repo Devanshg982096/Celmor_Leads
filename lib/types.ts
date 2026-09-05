@@ -50,6 +50,16 @@ export interface AvatarRow {
    * scraped material stay, and the avatar is still reachable by URL.
    */
   hidden: boolean;
+  /**
+   * This campaign's own LinkedIn wording. Each sender pitches something
+   * different, so the messages belong to the campaign rather than the
+   * workspace. Null falls back to the workspace defaults.
+   */
+  linkedin_dm_prompt: string | null;
+  linkedin_dm_template: string | null;
+  linkedin_followup_1: string | null;
+  linkedin_followup_2: string | null;
+  linkedin_followup_3: string | null;
 }
 
 export interface LeadRow {
@@ -87,6 +97,12 @@ export interface LeadRow {
   smartlead_lead_id: string | null;
   website_run_id: string | null;
   linkedin_run_id: string | null;
+  /**
+   * The lead this row was copied from when a campaign was handed over. The
+   * original keeps its own stage and conversation, so both senders can work
+   * the same person from their own account without treading on each other.
+   */
+  handed_over_from: string | null;
   /** Recent posts with dates and own-vs-reshared labelling. */
   linkedin_posts_summary: string | null;
   linkedin_posts_run_id: string | null;

@@ -22,6 +22,7 @@ import {
   type ActivityWithActor,
 } from "@/lib/leads/detail-actions";
 import { enrichLeadAction } from "@/lib/leads/enrichment-actions";
+import { findCounterparts, type CounterpartInfo } from "@/lib/leads/handover-actions";
 import { getLeadValue } from "@/lib/leads-columns";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types";
@@ -54,6 +55,14 @@ export default function LeadDetailDrawer({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isEnriching, startEnrichTransition] = useTransition();
   const [enrichError, setEnrichError] = useState<string | null>(null);
+  // The same person in the other sender's campaign, if there is one. Stored
+  // with the lead it was fetched for, so switching lead shows nothing rather
+  // than the previous lead's answer while the new one loads.
+  const [counterpartsFor, setCounterpartsFor] = useState<{
+    leadId: string;
+    rows: CounterpartInfo[];
+  } | null>(null);
+  const counterparts = counterpartsFor?.leadId === leadId ? counterpartsFor.rows : [];
 
   // Load lead detail when leadId changes
   useEffect(() => {
@@ -76,6 +85,19 @@ export default function LeadDetailDrawer({
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
+  }, [leadId]);
+
+  // Whether the other sender is already working this person. Loaded separately
+  // so a slow lookup never holds up the rest of the drawer.
+  useEffect(() => {
+    if (!leadId) return;
+    let cancelled = false;
+    findCounterparts(leadId).then((rows) => {
+      if (!cancelled) setCounterpartsFor({ leadId, rows });
+    });
     return () => {
       cancelled = true;
     };
@@ -298,6 +320,31 @@ export default function LeadDetailDrawer({
 
           {!loading && lead && (
             <>
+              {/* The other sender is on this person too. Worth knowing before
+                  you send anything, since only one of you is connected. */}
+              {counterparts.length > 0 && (
+                <section className="rounded-md border border-[var(--border-default)] bg-[var(--bg-overlay)] p-3">
+                  <p className="text-[12.5px] font-medium text-[var(--text-primary)]">
+                    Also being worked elsewhere
+                  </p>
+                  <ul className="mt-1.5 space-y-1">
+                    {counterparts.map((c, i) => (
+                      <li key={i} className="text-[12px] text-[var(--text-secondary)]">
+                        <span className="text-[var(--text-primary)]">{c.avatarName}</span>
+                        {" · "}
+                        {LINKEDIN_STAGE_OPTIONS.find((o) => o.value === c.stage)?.label ??
+                          c.stage}
+                        {c.ownerName ? ` · ${c.ownerName}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--text-tertiary)]">
+                    Only the sender who is connected can message them. Check where
+                    that conversation has got to before you send anything here.
+                  </p>
+                </section>
+              )}
+
               {/* Channels — quick action buttons */}
               <section>
                 <SectionHeading>Channels</SectionHeading>

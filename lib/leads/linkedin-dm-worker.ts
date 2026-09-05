@@ -116,26 +116,45 @@ export async function writeDmBatchFor(
 ): Promise<WriteOutcome> {
   const empty: WriteOutcome = { succeeded: 0, failed: 0, usage: EMPTY_USAGE, errors: [] };
 
-  const { data: wsRow } = await client
-    .from("workspace_settings")
-    .select(
-      "anthropic_api_key, linkedin_dm_prompt, linkedin_dm_template, linkedin_followup_1, linkedin_followup_2, linkedin_followup_3",
-    )
-    .eq("id", 1)
-    .maybeSingle();
+  // The wording belongs to the campaign, because each sender pitches something
+  // different from their own LinkedIn account. A campaign that has never been
+  // edited falls back to the workspace wording rather than writing nothing.
+  const [{ data: wsRow }, { data: avRow }] = await Promise.all([
+    client
+      .from("workspace_settings")
+      .select(
+        "anthropic_api_key, linkedin_dm_prompt, linkedin_dm_template, linkedin_followup_1, linkedin_followup_2, linkedin_followup_3",
+      )
+      .eq("id", 1)
+      .maybeSingle(),
+    client
+      .from("avatars")
+      .select(
+        "linkedin_dm_prompt, linkedin_dm_template, linkedin_followup_1, linkedin_followup_2, linkedin_followup_3",
+      )
+      .eq("id", avatarId)
+      .maybeSingle(),
+  ]);
+
+  const wording = (field: string): string => {
+    const own = (avRow as Record<string, unknown> | null)?.[field];
+    if (typeof own === "string" && own.trim()) return own;
+    const shared = (wsRow as Record<string, unknown> | null)?.[field];
+    return typeof shared === "string" ? shared : "";
+  };
 
   const apiKey = wsRow?.anthropic_api_key as string | null;
-  const rules = wsRow?.linkedin_dm_prompt as string | null;
+  const rules = wording("linkedin_dm_prompt");
   if (!apiKey) return { ...empty, fatal: "No Anthropic API key saved in Settings." };
-  if (!rules?.trim()) {
+  if (!rules.trim()) {
     return { ...empty, fatal: "No LinkedIn writing rules saved in the LinkedIn lab." };
   }
 
   const templates = {
-    first: (wsRow?.linkedin_dm_template as string | null) ?? "",
-    followup_1: (wsRow?.linkedin_followup_1 as string | null) ?? "",
-    followup_2: (wsRow?.linkedin_followup_2 as string | null) ?? "",
-    followup_3: (wsRow?.linkedin_followup_3 as string | null) ?? "",
+    first: wording("linkedin_dm_template"),
+    followup_1: wording("linkedin_followup_1"),
+    followup_2: wording("linkedin_followup_2"),
+    followup_3: wording("linkedin_followup_3"),
   };
 
   const { data, error } = await client

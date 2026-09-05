@@ -19,10 +19,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { updateLinkedInDmSettings } from "@/lib/settings/workspace-actions";
 import {
   listLabLeads,
   previewLinkedInDmAction,
+  saveAvatarWording,
   type LabAvatar,
   type LabLead,
   type LabPreview,
@@ -31,8 +31,15 @@ import type { LinkedInDmField } from "@/lib/types";
 
 type Values = Record<LinkedInDmField, string>;
 
+const BLANK: Values = {
+  linkedin_dm_prompt: "",
+  linkedin_dm_template: "",
+  linkedin_followup_1: "",
+  linkedin_followup_2: "",
+  linkedin_followup_3: "",
+};
+
 interface Props {
-  initial: Values;
   avatars: LabAvatar[];
 }
 
@@ -48,11 +55,21 @@ const BLOCKS: { field: LinkedInDmField; label: string; hint: string; rows: numbe
   { field: "linkedin_followup_3", label: "Follow-up 3", hint: "Leave blank to skip it.", rows: 7 },
 ];
 
-export default function LinkedInPromptLab({ initial, avatars }: Props) {
-  const [values, setValues] = useState<Values>(initial);
-  const [saved, setSaved] = useState<Values>(initial);
-
+export default function LinkedInPromptLab({ avatars }: Props) {
   const [avatarId, setAvatarId] = useState<string>(avatars[0]?.id ?? "");
+
+  // The wording belongs to the campaign, so switching campaign swaps the whole
+  // lab. Edits are kept per campaign until saved, so flicking between the two
+  // to compare wording does not throw away what you have typed.
+  const [drafts, setDrafts] = useState<Record<string, Values>>(() =>
+    Object.fromEntries(avatars.map((a) => [a.id, { ...a.wording }])),
+  );
+  const [saved, setSaved] = useState<Record<string, Values>>(() =>
+    Object.fromEntries(avatars.map((a) => [a.id, { ...a.wording }])),
+  );
+  const values = drafts[avatarId] ?? BLANK;
+  const savedValues = saved[avatarId] ?? BLANK;
+
   const [leads, setLeads] = useState<LabLead[]>([]);
   const [leadId, setLeadId] = useState<string>("");
   const [loadingLeads, startLoadLeads] = useTransition();
@@ -66,9 +83,18 @@ export default function LinkedInPromptLab({ initial, avatars }: Props) {
   const [saving, startSave] = useTransition();
 
   const dirtyFields = (Object.keys(values) as LinkedInDmField[]).filter(
-    (f) => values[f] !== saved[f],
+    (f) => values[f] !== savedValues[f],
   );
   const dirty = dirtyFields.length > 0;
+
+  // Campaigns with unsaved edits you have not come back to yet.
+  const otherUnsaved = avatars.filter(
+    (a) =>
+      a.id !== avatarId &&
+      (Object.keys(BLANK) as LinkedInDmField[]).some(
+        (f) => (drafts[a.id] ?? BLANK)[f] !== (saved[a.id] ?? BLANK)[f],
+      ),
+  );
 
   // Reload the lead list whenever the campaign changes.
   useEffect(() => {
@@ -82,7 +108,10 @@ export default function LinkedInPromptLab({ initial, avatars }: Props) {
   }, [avatarId]);
 
   function set(field: LinkedInDmField, next: string) {
-    setValues((v) => ({ ...v, [field]: next }));
+    setDrafts((d) => ({
+      ...d,
+      [avatarId]: { ...(d[avatarId] ?? BLANK), [field]: next },
+    }));
     setSaveOk(false);
     setSaveError(null);
   }
@@ -109,13 +138,14 @@ export default function LinkedInPromptLab({ initial, avatars }: Props) {
     setSaveError(null);
     setSaveOk(false);
     const patch = Object.fromEntries(dirtyFields.map((f) => [f, values[f]]));
+    const target = avatarId;
     startSave(async () => {
-      const result = await updateLinkedInDmSettings(patch);
+      const result = await saveAvatarWording(target, patch);
       if ("error" in result && result.error) {
         setSaveError(result.error);
         return;
       }
-      setSaved(values);
+      setSaved((prev) => ({ ...prev, [target]: { ...(drafts[target] ?? BLANK) } }));
       setSaveOk(true);
     });
   }
@@ -136,8 +166,38 @@ export default function LinkedInPromptLab({ initial, avatars }: Props) {
     );
   }
 
+  const current = avatars.find((a) => a.id === avatarId) ?? null;
+
   return (
     <div className="space-y-4">
+      {/* Which campaign's wording you are editing. Everything below follows this. */}
+      <Card>
+        <CardContent className="flex flex-wrap items-end gap-3 pt-6">
+          <div className="space-y-1.5">
+            <Label>Campaign</Label>
+            <Select value={avatarId} onValueChange={(v) => setAvatarId(v ?? avatarId)}>
+              <SelectTrigger className="w-72">
+                <SelectValue placeholder="Pick a campaign" />
+              </SelectTrigger>
+              <SelectContent>
+                {avatars.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name} ({a.leadCount.toLocaleString("en-GB")})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="pb-2 text-[12px] text-[var(--text-secondary)]">
+            The messages and rules below belong to{" "}
+            <span className="font-medium text-[var(--text-primary)]">
+              {current?.name ?? "this campaign"}
+            </span>
+            . Other campaigns are untouched by anything you save here.
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Try it on a real lead */}
       <Card>
         <CardHeader>
@@ -150,22 +210,6 @@ export default function LinkedInPromptLab({ initial, avatars }: Props) {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1.5">
-              <Label>Campaign</Label>
-              <Select value={avatarId} onValueChange={(v) => setAvatarId(v ?? avatarId)}>
-                <SelectTrigger className="w-64">
-                  <SelectValue placeholder="Pick a campaign" />
-                </SelectTrigger>
-                <SelectContent>
-                  {avatars.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name} ({a.leadCount.toLocaleString("en-GB")})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="space-y-1.5">
               <Label>Lead</Label>
               <Select
@@ -284,9 +328,9 @@ export default function LinkedInPromptLab({ initial, avatars }: Props) {
         <CardHeader>
           <CardTitle>The messages</CardTitle>
           <CardDescription>
-            The fixed wording everyone gets. Saving applies it to every lead
-            straight away, including ones already written, because only the
-            personalised lines are stored per person.
+            The fixed wording everyone in this campaign gets. Saving applies it
+            to every lead straight away, including ones already written, because
+            only the personalised lines are stored per person.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -294,7 +338,7 @@ export default function LinkedInPromptLab({ initial, avatars }: Props) {
             <div key={b.field} className="space-y-1.5">
               <div className="flex items-baseline justify-between gap-3">
                 <Label htmlFor={b.field}>{b.label}</Label>
-                {values[b.field] !== saved[b.field] && (
+                {values[b.field] !== savedValues[b.field] && (
                   <span className="text-[11px] text-[var(--text-tertiary)]">unsaved</span>
                 )}
               </div>
@@ -317,8 +361,9 @@ export default function LinkedInPromptLab({ initial, avatars }: Props) {
         <CardHeader>
           <CardTitle>Writing rules</CardTitle>
           <CardDescription>
-            How the personalised lines get written. The output format is fixed
-            in code, so you can rewrite this freely without breaking anything.
+            How the personalised lines get written for this campaign. The output
+            format is fixed in code, so you can rewrite this freely without
+            breaking anything.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -338,7 +383,7 @@ export default function LinkedInPromptLab({ initial, avatars }: Props) {
           {saving
             ? "Saving…"
             : dirty
-              ? `Save ${dirtyFields.length} change${dirtyFields.length === 1 ? "" : "s"}`
+              ? `Save ${dirtyFields.length} change${dirtyFields.length === 1 ? "" : "s"} to ${current?.name ?? "this campaign"}`
               : "Save changes"}
         </Button>
         {dirty && (
@@ -346,7 +391,7 @@ export default function LinkedInPromptLab({ initial, avatars }: Props) {
             variant="ghost"
             size="sm"
             onClick={() => {
-              setValues(saved);
+              setDrafts((d) => ({ ...d, [avatarId]: { ...savedValues } }));
               setSaveError(null);
             }}
             disabled={saving}
@@ -359,6 +404,11 @@ export default function LinkedInPromptLab({ initial, avatars }: Props) {
         )}
         {saveError && (
           <span className="text-xs text-[var(--status-danger)]">{saveError}</span>
+        )}
+        {otherUnsaved.length > 0 && (
+          <span className="ml-auto text-xs text-[var(--text-tertiary)]">
+            Unsaved edits also in {otherUnsaved.map((a) => a.name).join(", ")}
+          </span>
         )}
       </div>
     </div>

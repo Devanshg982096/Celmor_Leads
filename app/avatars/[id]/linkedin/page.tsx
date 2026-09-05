@@ -3,6 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import ChannelHeader from "@/components/channels/ChannelHeader";
 import LinkedInView from "@/components/channels/LinkedInView";
 import ChannelTabs from "@/components/avatars/ChannelTabs";
+import HandoverDialog from "@/components/channels/HandoverDialog";
 import { createClient } from "@/lib/supabase/server";
 import { listProfiles } from "@/lib/avatars/leads-actions";
 import {
@@ -44,11 +45,25 @@ export default async function LinkedInChannelPage({
   ]);
   const currentUserId = userData.user?.id ?? "";
 
+  // This campaign's own wording, falling back to the workspace defaults for a
+  // campaign nobody has edited yet.
+  const wording = (
+    field:
+      | "linkedin_dm_template"
+      | "linkedin_followup_1"
+      | "linkedin_followup_2"
+      | "linkedin_followup_3",
+  ): string => {
+    const own = avatar[field];
+    if (typeof own === "string" && own.trim()) return own;
+    return ws?.[field] ?? "";
+  };
+
   const dmTemplates = {
-    first: ws?.linkedin_dm_template ?? "",
-    followup_1: ws?.linkedin_followup_1 ?? "",
-    followup_2: ws?.linkedin_followup_2 ?? "",
-    followup_3: ws?.linkedin_followup_3 ?? "",
+    first: wording("linkedin_dm_template"),
+    followup_1: wording("linkedin_followup_1"),
+    followup_2: wording("linkedin_followup_2"),
+    followup_3: wording("linkedin_followup_3"),
   };
 
   const leads = await getChannelLeads({
@@ -85,7 +100,16 @@ export default async function LinkedInChannelPage({
             LinkedIn
           </h1>
         </div>
-        <ChannelTabs avatarId={id} />
+        <div className="flex items-center gap-2">
+          <HandoverDialog
+            avatarId={id}
+            avatarName={avatar.name}
+            others={avatars.filter((a) => a.id !== id).map((a) => ({ id: a.id, name: a.name }))}
+            profiles={profiles}
+            currentUserId={currentUserId}
+          />
+          <ChannelTabs avatarId={id} />
+        </div>
       </div>
 
       <LinkedInView
