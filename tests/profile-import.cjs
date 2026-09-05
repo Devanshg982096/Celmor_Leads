@@ -1,0 +1,30 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const { createRequire } = require('node:module');
+const root = path.resolve(__dirname, '..');
+const req = createRequire(root + '/package.json');
+const ts = req('typescript');
+function load(file) {
+  const result = ts.transpileModule(fs.readFileSync(root + '/lib/leads/' + file + '.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } });
+  const mod = { exports: {} }; new Function('require', 'module', 'exports', result.outputText)(require, mod, mod.exports); return mod.exports;
+}
+const { canonicalLinkedInUrl, mapProfile, validateDraft } = load('profile-import');
+const { signProfileTicket, verifyProfileTicket } = load('profile-ticket');
+assert.equal(canonicalLinkedInUrl('https://uk.linkedin.com/in/Matthew-Ellis-13975760/?trk=test'), 'https://www.linkedin.com/in/matthew-ellis-13975760');
+assert.equal(canonicalLinkedInUrl('www.linkedin.com/in/example'), 'https://www.linkedin.com/in/example');
+for (const url of ['https://linkedin.com.evil.test/in/name', 'https://evil.test/linkedin.com/in/name', 'https://linkedin.com/company/name', 'https://user@linkedin.com/in/name', 'file:///in/name']) assert.throws(() => canonicalLinkedInUrl(url));
+const draft = mapProfile({ fullName: 'Sample Owner', companyName: 'Example Accounting', jobTitle: 'Owner', companySize: '2-10', companyIndustry: 'Accounting', email: null });
+assert.equal(draft.email, ''); assert.equal(draft.company, 'Example Accounting'); assert.equal(draft.employees, '2-10');
+assert.equal(validateDraft(draft).email, '');
+assert.throws(() => validateDraft({ ...draft, email: 'bad email' }));
+assert.throws(() => mapProfile({ succeeded: false, error: 'failed' }));
+assert.throws(() => mapProfile({}));
+const data = { runId: 'run', userId: 'user', avatarId: 'avatar', url: 'https://www.linkedin.com/in/example', leadId: 'lead', expires: Date.now() + 10000 };
+const ticket = signProfileTicket(data, 'test-secret');
+assert.deepEqual(verifyProfileTicket(ticket, 'test-secret', 'user', 'avatar'), data);
+assert.throws(() => verifyProfileTicket(ticket, 'test-secret', 'other-user', 'avatar'));
+assert.throws(() => verifyProfileTicket(ticket, 'test-secret', 'user', 'other-avatar'));
+assert.throws(() => verifyProfileTicket(ticket + 'x', 'test-secret', 'user', 'avatar'));
+assert.throws(() => verifyProfileTicket(signProfileTicket({ ...data, expires: 1 }, 'test-secret'), 'test-secret', 'user', 'avatar'));
+console.log('Profile URL, mapping, missing email, validation, ticket tampering, ownership and expiry checks passed.');

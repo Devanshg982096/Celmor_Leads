@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
+import NewLeadDialog from "@/components/leads/NewLeadDialog";
 import AddLeadsDialog from "@/components/hub/AddLeadsDialog";
 import LeadsTable from "@/components/avatars/LeadsTable";
 import ChannelTabs from "@/components/avatars/ChannelTabs";
@@ -56,6 +57,7 @@ export default async function MasterSheetPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <NewLeadDialog avatarId={id} />
           <AddLeadsDialog avatarId={id} />
           <ChannelTabs avatarId={id} />
         </div>

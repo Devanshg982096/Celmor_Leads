@@ -6,6 +6,7 @@ import MasterTile from "@/components/hub/MasterTile";
 import LinkedInTile from "@/components/hub/LinkedInTile";
 import EmailsTile from "@/components/hub/EmailsTile";
 import CallsTile from "@/components/hub/CallsTile";
+import NewLeadDialog from "@/components/leads/NewLeadDialog";
 import AddLeadsDialog from "@/components/hub/AddLeadsDialog";
 import { buttonVariants } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
@@ -57,6 +58,7 @@ export default async function AvatarHubPage({
           Four channels · pick your surface
         </p>
         <div className="flex items-center gap-1">
+          <NewLeadDialog avatarId={id} />
           <AddLeadsDialog avatarId={id} />
           <a
             href={`/api/export/avatars/${id}/leads`}
