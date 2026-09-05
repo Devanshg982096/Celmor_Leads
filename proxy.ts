@@ -37,6 +37,7 @@ export async function proxy(request: NextRequest) {
   const isPublicApi =
     pathname.startsWith("/api/enrich/tick") ||
     pathname.startsWith("/api/linkedin-dm/tick") ||
+    pathname === "/api/profile-queue/tick" ||
     pathname.startsWith("/api/smartlead/sync") ||
     // Netlify scheduled functions get invoked at /.netlify/functions/<name>.
     // Without this carve-out the middleware was redirecting Netlify's own

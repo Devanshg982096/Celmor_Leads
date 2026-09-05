@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
+import ConnectionQueue from "@/components/leads/ConnectionQueue";
 import NewLeadDialog from "@/components/leads/NewLeadDialog";
 import AddLeadsDialog from "@/components/hub/AddLeadsDialog";
 import LeadsTable from "@/components/avatars/LeadsTable";
@@ -62,6 +63,8 @@ export default async function MasterSheetPage({
           <ChannelTabs avatarId={id} />
         </div>
       </div>
+
+      <ConnectionQueue avatarId={id} />
 
       <LeadsTable
         leads={leads}
