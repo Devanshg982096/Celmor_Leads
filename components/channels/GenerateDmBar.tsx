@@ -304,6 +304,11 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
           >
             {written.toLocaleString("en-GB")} of {total.toLocaleString("en-GB")} written
           </p>
+          {/* The denominator is accepted connections, not the whole list, so
+              say so. Otherwise "0 of 12" next to 200 leads looks broken. */}
+          <p className="text-[11px] text-[var(--text-tertiary)]">
+            Accepted connections only
+          </p>
           {failed > 0 && (
             <p className="text-[12px] text-[var(--status-danger)]">
               {failed.toLocaleString("en-GB")} failed
@@ -376,7 +381,11 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
           </Button>
         ) : (
           <Button size="sm" onClick={onStart} disabled={remaining === 0}>
-            {remaining === 0 ? "All messages written" : "Read and write"}
+            {total === 0
+              ? "Nobody has accepted yet"
+              : remaining === 0
+                ? "All messages written"
+                : "Read and write"}
           </Button>
         )}
 
@@ -426,6 +435,15 @@ export default function GenerateDmBar({ avatarId, initial }: Props) {
             <>{progress.scraping.toLocaleString("en-GB")} still out being read. </>
           )}
           Runs {batchSize} at a time.
+        </p>
+      )}
+
+      {/* Nothing to do yet, and it is worth saying why rather than looking broken. */}
+      {!running && total === 0 && (
+        <p className="mt-2 text-[12px] text-[var(--text-secondary)]">
+          Messages are only written for people who have accepted your connection
+          request, because nobody else can be sent one. Mark leads as
+          &quot;Connection Accepted&quot; and they will appear here.
         </p>
       )}
 

@@ -1,4 +1,4 @@
-import type { Lead, LinkedInDmSlot } from "@/lib/types";
+import type { Lead, LinkedInDmSlot, LinkedInStage } from "@/lib/types";
 
 /**
  * The fixed wording for all four messages, as saved in Settings. Passed down
@@ -29,6 +29,24 @@ export const DM_BATCH_OPTIONS = [1, 2, 3, 5, 8, 10] as const;
  * you can then read end to end, not on the smallest batch that felt tidy.
  */
 export const DM_RUN_SIZE_OPTIONS = [1, 5, 10, 25, 50, 100, 0] as const;
+
+/**
+ * Stages worth spending money on.
+ *
+ * You cannot DM someone who has not accepted your connection request, so
+ * scraping their profile and writing four messages for them is money spent on
+ * a message that cannot be sent. A run only touches people who are in.
+ *
+ * Everything past "accepted" stays on the list so the progress numbers do not
+ * go backwards as messages get sent. "Dead" is left out deliberately.
+ */
+export const DM_ELIGIBLE_STAGES = [
+  "connection_accepted",
+  "first_message",
+  "first_followup",
+  "second_followup",
+  "third_followup",
+] as const satisfies readonly LinkedInStage[];
 
 export interface DmProgress {
   total: number;

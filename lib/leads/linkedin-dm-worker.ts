@@ -10,6 +10,7 @@ import { startLeadScrape, pollLeadScrape } from "@/lib/enrichment/linkedin-scrap
 import { getLeadValue } from "@/lib/leads-columns";
 import {
   DM_BATCH_SIZE,
+  DM_ELIGIBLE_STAGES,
   EMPTY_USAGE,
   addUsage,
   type DmProgress,
@@ -43,13 +44,16 @@ export async function getProgressFor(
   avatarId: string,
   client: Client,
 ): Promise<DmProgress> {
+  // Only people who accepted the connection request. Anyone still waiting
+  // cannot be messaged, so counting them would promise work that will not run.
   const base = () =>
     client
       .from("leads")
       .select("*", { count: "exact", head: true })
       .eq("avatar_id", avatarId)
       .eq("qualified", "qualified")
-      .not("linkedin_url", "is", null);
+      .not("linkedin_url", "is", null)
+      .in("linkedin_stage", DM_ELIGIBLE_STAGES);
 
   const [
     { count: total },
@@ -163,6 +167,7 @@ export async function writeDmBatchFor(
     .eq("avatar_id", avatarId)
     .eq("qualified", "qualified")
     .not("linkedin_url", "is", null)
+    .in("linkedin_stage", DM_ELIGIBLE_STAGES)
     .is("linkedin_open_first", null)
     .is("linkedin_dm_status", null)
     .not("linkedin_summary", "is", null)
@@ -316,7 +321,8 @@ export async function advanceDmRunFor(
       .select(SCRAPE_SELECT)
       .eq("avatar_id", avatarId)
       .eq("qualified", "qualified")
-      .not("linkedin_url", "is", null);
+      .not("linkedin_url", "is", null)
+      .in("linkedin_stage", DM_ELIGIBLE_STAGES);
 
   const errors: { name: string; error: string }[] = [];
   let apifyUsd = 0;
@@ -348,6 +354,7 @@ export async function advanceDmRunFor(
     .from("leads")
     .select("*", { count: "exact", head: true })
     .eq("avatar_id", avatarId)
+    .in("linkedin_stage", DM_ELIGIBLE_STAGES)
     .eq("enrichment_status", "enriching");
 
   const room = Math.max(0, size * 2 - (nowScraping ?? 0));
