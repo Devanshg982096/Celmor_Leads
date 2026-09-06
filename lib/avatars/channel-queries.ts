@@ -22,7 +22,9 @@ export async function getChannelLeads(opts: {
     .eq("avatar_id", opts.avatarId)
     .eq("qualified", "qualified");
 
-  if (opts.channel === "calls") q = q.not("phone", "is", null);
+  // A lead is on the Calls tab exactly when it has a phone number. An empty
+  // string is not a phone number, so exclude those too.
+  if (opts.channel === "calls") q = q.not("phone", "is", null).neq("phone", "");
   if (opts.channel === "linkedin") q = q.not("linkedin_url", "is", null);
   if (opts.channel === "emails") q = q.not("email", "is", null);
 

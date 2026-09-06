@@ -19,8 +19,10 @@ import {
 import {
   getLeadDetail,
   updateLeadNotes,
+  updateLeadPhone,
   type ActivityWithActor,
 } from "@/lib/leads/detail-actions";
+import { Input } from "@/components/ui/input";
 import { enrichLeadAction } from "@/lib/leads/enrichment-actions";
 import { findCounterparts, type CounterpartInfo } from "@/lib/leads/handover-actions";
 import { getLeadValue } from "@/lib/leads-columns";
@@ -62,6 +64,13 @@ export default function LeadDetailDrawer({
     leadId: string;
     rows: CounterpartInfo[];
   } | null>(null);
+  // Typed-in phone number. Held per lead so switching lead does not carry a
+  // half-typed number across.
+  const [phoneDraft, setPhoneDraft] = useState<{ leadId: string; value: string } | null>(
+    null,
+  );
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [isSavingPhone, startSavePhone] = useTransition();
   const counterparts = counterpartsFor?.leadId === leadId ? counterpartsFor.rows : [];
 
   // Load lead detail when leadId changes
@@ -117,6 +126,21 @@ export default function LeadDetailDrawer({
       document.body.style.overflow = prevOverflow;
     };
   }, [open, onClose]);
+
+  function handleSavePhone() {
+    if (!leadId || !lead) return;
+    const value = phoneDraft?.leadId === leadId ? phoneDraft.value : (lead.phone ?? "");
+    setPhoneError(null);
+    startSavePhone(async () => {
+      const result = await updateLeadPhone(leadId, value);
+      if (!result.ok) {
+        setPhoneError(result.error);
+        return;
+      }
+      setLead((prev) => (prev ? { ...prev, phone: result.phone } : prev));
+      setPhoneDraft(null);
+    });
+  }
 
   function handleSaveNotes() {
     if (!leadId) return;
@@ -386,10 +410,19 @@ export default function LeadDetailDrawer({
                 <SectionHeading>Contact</SectionHeading>
                 <dl>
                   <KvRow label="Email" value={lead.email} href={`mailto:${lead.email}`} />
-                  <KvRow
-                    label="Phone"
-                    value={lead.phone}
-                    href={lead.phone ? `tel:${lead.phone}` : undefined}
+                  {/* Editable, because a phone number is what puts this lead on
+                      the Calls tab and most of them arrive without one. */}
+                  <PhoneRow
+                    value={phoneDraft?.leadId === leadId ? phoneDraft.value : (lead.phone ?? "")}
+                    saved={lead.phone}
+                    dirty={phoneDraft?.leadId === leadId && phoneDraft.value !== (lead.phone ?? "")}
+                    saving={isSavingPhone}
+                    error={phoneError}
+                    onChange={(v) => {
+                      setPhoneDraft({ leadId: leadId!, value: v });
+                      setPhoneError(null);
+                    }}
+                    onSave={handleSavePhone}
                   />
                   <KvRow
                     label="LinkedIn"
@@ -627,6 +660,77 @@ function CollapsibleSource({ label, text }: { label: string; text: string }) {
           </pre>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The phone row, editable in place.
+ *
+ * A phone number is the only thing that puts a lead on the Calls tab, and most
+ * leads arrive from LinkedIn without one, so this has to be typeable rather
+ * than waiting on a scraper that will not find it.
+ */
+function PhoneRow({
+  value,
+  saved,
+  dirty,
+  saving,
+  error,
+  onChange,
+  onSave,
+}: {
+  value: string;
+  saved: string | null;
+  dirty: boolean;
+  saving: boolean;
+  error: string | null;
+  onChange: (next: string) => void;
+  onSave: () => void;
+}) {
+  return (
+    <div
+      className="grid grid-cols-[90px_1fr] items-baseline gap-3 border-b py-[7px] text-[13px] last:border-b-0"
+      style={{ borderColor: "var(--border-subtle)" }}
+    >
+      <span className="text-[12px] text-[var(--text-tertiary)]">Phone</span>
+      <div className="min-w-0 space-y-1">
+        <div className="flex items-center gap-1.5">
+          <Input
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && dirty && !saving) onSave();
+            }}
+            placeholder="Add a phone number"
+            inputMode="tel"
+            disabled={saving}
+            className="h-7 flex-1 text-[13px]"
+          />
+          {dirty && (
+            <Button size="sm" className="h-7" onClick={onSave} disabled={saving}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          )}
+          {!dirty && saved && (
+            <a
+              href={`tel:${saved}`}
+              className="inline-flex h-7 items-center rounded-md border border-[var(--border-default)] px-2 text-[12px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
+            >
+              Call
+            </a>
+          )}
+        </div>
+        {error ? (
+          <p className="text-[11px] text-[var(--status-danger)]">{error}</p>
+        ) : (
+          !saved && (
+            <p className="text-[11px] text-[var(--text-tertiary)]">
+              Adding one puts this lead on the Calls tab.
+            </p>
+          )
+        )}
+      </div>
     </div>
   );
 }

@@ -77,3 +77,43 @@ export async function updateLeadNotes(leadId: string, notes: string) {
 
   revalidatePath("/", "layout");
 }
+
+/**
+ * Set or clear a lead's phone number by hand.
+ *
+ * The Calls tab is "every lead with a phone number", so saving one here is
+ * what puts the lead on that list. A blank saves as null rather than an empty
+ * string, or the lead would show up on the Calls tab with nothing to ring.
+ */
+export async function updateLeadPhone(
+  leadId: string,
+  phone: string,
+): Promise<{ ok: true; phone: string | null } | { ok: false; error: string }> {
+  const next = phone.trim();
+  // Deliberately loose. Numbers arrive as "+44 20 7946 0958", "020 7946 0958"
+  // and "07700 900123 (mobile)", and refusing any of those would be worse than
+  // storing what the user typed.
+  if (next.length > 40) return { ok: false, error: "That's too long for a phone number." };
+  if (next && !/[0-9]/.test(next)) {
+    return { ok: false, error: "A phone number needs at least one digit." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not authenticated." };
+
+  const value = next.length === 0 ? null : next;
+  const { error } = await supabase.from("leads").update({ phone: value }).eq("id", leadId);
+  if (error) return { ok: false, error: error.message };
+
+  await supabase.from("activity_log").insert({
+    lead_id: leadId,
+    user_id: user.id,
+    action: value ? "Phone number added" : "Phone number removed",
+  });
+
+  revalidatePath("/", "layout");
+  return { ok: true, phone: value };
+}
