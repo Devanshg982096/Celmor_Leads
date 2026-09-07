@@ -30,7 +30,10 @@ export default async function EmailsChannelPage({
 }) {
   const { id } = await params;
   const { my, tab } = await searchParams;
-  const myLeadsOnly = my !== "0";
+  // Off by default. A campaign now belongs to one sender, so most of its leads
+  // are someone else's when you look at it, and defaulting this on made a
+  // 27-lead campaign look like a 3-lead one.
+  const myLeadsOnly = my === "1";
   const activeTab: SubTab =
     tab === "smartlead" ? "smartlead" : tab === "planner" ? "planner" : "leads";
 
@@ -163,7 +166,7 @@ function SubTabs({
   myLeadsOnly: boolean;
 }) {
   // Preserve the `my` filter when switching tabs.
-  const myParam = myLeadsOnly ? "" : "&my=0";
+  const myParam = myLeadsOnly ? "&my=1" : "";
   const tabs: { label: string; value: SubTab; href: string }[] = [
     { label: "Leads", value: "leads", href: `/avatars/${avatarId}/emails?tab=leads${myParam}` },
     { label: "Planner", value: "planner", href: `/avatars/${avatarId}/emails?tab=planner${myParam}` },

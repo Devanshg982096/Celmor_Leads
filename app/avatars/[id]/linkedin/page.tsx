@@ -25,7 +25,10 @@ export default async function LinkedInChannelPage({
 }) {
   const { id } = await params;
   const { my } = await searchParams;
-  const myLeadsOnly = my !== "0";
+  // Off by default. A campaign now belongs to one sender, so most of its leads
+  // are someone else's when you look at it, and defaulting this on made a
+  // 27-lead campaign look like a 3-lead one.
+  const myLeadsOnly = my === "1";
 
   const supabase = await createClient();
   const { data: avatarRow } = await supabase

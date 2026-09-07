@@ -34,12 +34,12 @@ export default function ChannelHeader({
   const router = useRouter();
 
   function switchAvatar(nextId: string) {
-    const params = !myLeadsOnly ? "?my=0" : "";
+    const params = myLeadsOnly ? "?my=1" : "";
     router.push(`/avatars/${nextId}/${channelSlug}${params}`);
   }
 
   function toggleMyLeads() {
-    const params = myLeadsOnly ? "?my=0" : "";
+    const params = myLeadsOnly ? "" : "?my=1";
     router.replace(`/avatars/${avatarId}/${channelSlug}${params}`, {
       scroll: false,
     });

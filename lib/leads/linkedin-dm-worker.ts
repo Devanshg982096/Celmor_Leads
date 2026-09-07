@@ -40,6 +40,17 @@ const SCRAPE_SELECT = `id, name, title, company, raw_data, linkedin_url,
   website_run_id, linkedin_run_id, linkedin_posts_run_id,
   enrichment_status, enrichment_attempts, linkedin_open_first, linkedin_dm_status`;
 
+/**
+ * A lead has something to write from when ANY of the three scrapes came back.
+ *
+ * The profile scraper comes back empty often enough to matter, and when it
+ * does the posts scrape usually still succeeds. Posts are the better material
+ * anyway, so insisting on the profile summary stranded those leads: marked
+ * done by the scrape step, then never picked up by the write step.
+ */
+const HAS_MATERIAL =
+  "linkedin_summary.not.is.null,linkedin_posts_summary.not.is.null,website_summary.not.is.null";
+
 export async function getProgressFor(
   avatarId: string,
   client: Client,
@@ -69,7 +80,7 @@ export async function getProgressFor(
     base()
       .is("linkedin_open_first", null)
       .is("linkedin_dm_status", null)
-      .not("linkedin_summary", "is", null),
+      .or(HAS_MATERIAL),
   ]);
 
   const t = total ?? 0;
@@ -170,7 +181,7 @@ export async function writeDmBatchFor(
     .in("linkedin_stage", DM_ELIGIBLE_STAGES)
     .is("linkedin_open_first", null)
     .is("linkedin_dm_status", null)
-    .not("linkedin_summary", "is", null)
+    .or(HAS_MATERIAL)
     .order("created_at", { ascending: true })
     .limit(size);
 
@@ -363,6 +374,8 @@ export async function advanceDmRunFor(
       .is("linkedin_open_first", null)
       .is("linkedin_dm_status", null)
       .is("linkedin_summary", null)
+      .is("linkedin_posts_summary", null)
+      .is("website_summary", null)
       .is("enrichment_status", null)
       .order("created_at", { ascending: true })
       .limit(room);
