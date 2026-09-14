@@ -129,10 +129,18 @@ export default function LeadsTable({
   currentUserId,
 }: Props) {
   const searchParams = useSearchParams();
-  const filters = useMemo(
+  const urlFilters = useMemo(
     () => filtersFromSearchParams(new URLSearchParams(searchParams.toString())),
     [searchParams],
   );
+
+  // Search text is held here, not in the URL. Routing a character at a time
+  // meant a server round trip per keystroke on a page that re-renders on every
+  // request, so the letter you typed only appeared once Netlify answered. The
+  // leads are already in memory, so filtering them needs no request at all.
+  // Seeded from the URL once, so a shared or refreshed link still searches.
+  const [q, setQ] = useState(urlFilters.q);
+  const filters = useMemo(() => ({ ...urlFilters, q }), [urlFilters, q]);
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -576,6 +584,8 @@ export default function LeadsTable({
             currentUserId={currentUserId}
             resultCount={filtered.length}
             totalCount={leads.length}
+            q={q}
+            onQChange={setQ}
           />
           <DistributeDialog
             allLeads={leads}

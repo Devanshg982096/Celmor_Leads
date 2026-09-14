@@ -71,6 +71,17 @@ interface Props {
   currentUserId: string;
   resultCount: number;
   totalCount: number;
+  /**
+   * The search text, owned by the table rather than the URL.
+   *
+   * Every other filter is a click, so a navigation per change is fine. Search
+   * is a keystroke, and this page is server-rendered on every request, so
+   * routing each character meant a round trip to Netlify before the letter
+   * you typed could even appear. The table already holds every lead and
+   * filters them itself, so that request never had anything to fetch.
+   */
+  q: string;
+  onQChange: (next: string) => void;
 }
 
 export default function FilterBar({
@@ -78,6 +89,8 @@ export default function FilterBar({
   currentUserId,
   resultCount,
   totalCount,
+  q,
+  onQChange,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -115,7 +128,7 @@ export default function FilterBar({
 
   const activeChips = useMemo(() => {
     const chips: { key: keyof FilterState | "q"; label: string }[] = [];
-    if (state.q) chips.push({ key: "q", label: `Search: "${state.q}"` });
+    if (q) chips.push({ key: "q", label: `Search: "${q}"` });
     if (state.owner !== ALL) {
       const opt = ownerOptions.find((o) => o.value === state.owner);
       chips.push({ key: "owner", label: `Owner: ${opt?.label ?? state.owner}` });
@@ -137,11 +150,14 @@ export default function FilterBar({
       chips.push({ key: "call_status", label: `Call: ${opt?.label}` });
     }
     return chips;
-  }, [state, ownerOptions]);
+  }, [state, ownerOptions, q]);
 
   function clearChip(key: keyof FilterState | "q") {
+    if (key === "q") {
+      onQChange("");
+      return;
+    }
     const map: Record<typeof key, string> = {
-      q: "q",
       owner: "owner",
       lead_status: "status",
       email_status: "email",
@@ -153,6 +169,7 @@ export default function FilterBar({
   }
 
   function clearAll() {
+    onQChange("");
     startTransition(() => router.replace(pathname, { scroll: false }));
   }
 
@@ -163,8 +180,8 @@ export default function FilterBar({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <Input
-          value={state.q}
-          onChange={(e) => setParam("q", e.target.value)}
+          value={q}
+          onChange={(e) => onQChange(e.target.value)}
           placeholder="Search name, email or company…"
           className="max-w-xs"
         />
